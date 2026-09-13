@@ -1,0 +1,292 @@
+#include "FunctionHandler.h"
+#include <algorithm>
+
+using json = nlohmann::json;
+
+FunctionHandler::FunctionHandler(GW2Client* gw2, ItemIndex* index)
+    : m_gw2(gw2), m_index(index) {}
+
+FunctionResult FunctionHandler::Handle(const FunctionCall& call) {
+    FunctionResult result;
+    result.callId = call.id;
+    result.name = call.name;
+
+    if (call.name == "gw2_item_info")
+        result.resultText = HandleItemInfo(call.arguments);
+    else if (call.name == "gw2_recipe")
+        result.resultText = HandleRecipe(call.arguments);
+    else if (call.name == "gw2_wiki")
+        result.resultText = HandleWiki(call.arguments);
+    else
+        result.resultText = "{\"error\": \"Unknown function: " + call.name + "\"}";
+
+    return result;
+}
+
+json FunctionHandler::GetToolDefinitions() {
+    json tools = json::array();
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_item_info"},
+        {"description", "Get GW2 item details and Trading Post prices by item name. Returns item info (id, rarity, level, chat_link) and current TP buy/sell prices formatted in gold/silver/copper."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Item name in English (e.g. 'Dusk', 'Glob of Ectoplasm', 'Mystic Coin')"}
+                }}
+            }},
+            {"required", json::array({"name"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_recipe"},
+        {"description", "Look up crafting recipe for a GW2 item by name. Returns ingredients with quantities, crafting disciplines, rating, and ingredient TP prices."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Output item name in English (e.g. 'Deldrimor Steel Ingot', 'Superior Rune of the Scholar')"}
+                }}
+            }},
+            {"required", json::array({"name"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_wiki"},
+        {"description", "Search the GW2 Wiki and return page content. Use for NPC locations, event info, achievement guides, and general game knowledge not covered by other tools."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"query", {
+                    {"type", "string"},
+                    {"description", "Search query in English (e.g. 'Miyani', 'Shadow Behemoth', 'Ascended armor')"}
+                }}
+            }},
+            {"required", json::array({"query"})}
+        }}
+    });
+
+    return tools;
+}
+
+int FunctionHandler::ResolveItemId(const std::string& name) {
+    int cached = m_index->Find(name);
+    if (cached > 0) return cached;
+
+    auto results = m_gw2->WikiSearch(name, 3);
+    if (results.empty()) return 0;
+
+    for (auto& r : results) {
+        auto page = m_gw2->WikiGetPage(r.title);
+        if (!page.found) continue;
+
+        std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
+        if (!idStr.empty()) {
+            int id = std::stoi(idStr);
+            m_index->Add(r.title, id);
+            m_index->Add(name, id);
+            return id;
+        }
+    }
+    return 0;
+}
+
+std::string FunctionHandler::HandleItemInfo(const json& args) {
+    std::string name = args.value("name", "");
+    if (name.empty()) return "{\"error\": \"name parameter required\"}";
+
+    int itemId = ResolveItemId(name);
+    if (itemId <= 0)
+        return "{\"error\": \"Item not found: " + name + "\"}";
+
+    auto item = m_gw2->GetItem(itemId);
+    if (!item.found)
+        return "{\"error\": \"Item ID " + std::to_string(itemId) + " not found in GW2 API\"}";
+
+    json result;
+    result["id"] = item.id;
+    result["name"] = item.name;
+    result["type"] = item.type;
+    result["rarity"] = item.rarity;
+    result["level"] = item.level;
+    result["chat_link"] = item.chatLink;
+    if (!item.description.empty())
+        result["description"] = item.description;
+    result["vendor_value"] = GW2Client::FormatPrice(item.vendorValue);
+
+    auto price = m_gw2->GetPrice(itemId);
+    if (price.found) {
+        result["tradeable"] = true;
+        result["tp_buy"] = GW2Client::FormatPrice(price.buyPrice);
+        result["tp_buy_quantity"] = price.buyQuantity;
+        result["tp_sell"] = GW2Client::FormatPrice(price.sellPrice);
+        result["tp_sell_quantity"] = price.sellQuantity;
+    } else {
+        result["tradeable"] = false;
+    }
+
+    m_index->Add(item.name, item.id);
+
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleRecipe(const json& args) {
+    std::string name = args.value("name", "");
+    if (name.empty()) return "{\"error\": \"name parameter required\"}";
+
+    int itemId = ResolveItemId(name);
+    if (itemId <= 0)
+        return "{\"error\": \"Item not found: " + name + "\"}";
+
+    auto recipeIds = m_gw2->SearchRecipesByOutput(itemId);
+    if (recipeIds.empty())
+        return "{\"error\": \"No recipe found for: " + name + "\"}";
+
+    auto recipe = m_gw2->GetRecipe(recipeIds[0]);
+    if (!recipe.found)
+        return "{\"error\": \"Recipe details not available\"}";
+
+    std::vector<int> ingredientIds;
+    for (auto& ing : recipe.ingredients)
+        ingredientIds.push_back(ing.itemId);
+
+    auto items = m_gw2->GetItems(ingredientIds);
+    auto prices = m_gw2->GetPrices(ingredientIds);
+
+    json result;
+    result["recipe_id"] = recipe.id;
+    result["output_item_id"] = recipe.outputItemId;
+    result["output_count"] = recipe.outputCount;
+    result["min_rating"] = recipe.minRating;
+    result["disciplines"] = recipe.disciplines;
+    if (!recipe.chatLink.empty())
+        result["chat_link"] = recipe.chatLink;
+
+    json ingredients = json::array();
+    int totalCost = 0;
+    for (auto& ing : recipe.ingredients) {
+        json ingJ;
+        ingJ["item_id"] = ing.itemId;
+        ingJ["count"] = ing.count;
+
+        for (auto& item : items) {
+            if (item.id == ing.itemId) {
+                ingJ["name"] = item.name;
+                m_index->Add(item.name, item.id);
+                break;
+            }
+        }
+        for (auto& p : prices) {
+            if (p.itemId == ing.itemId && p.found) {
+                int cost = p.sellPrice * ing.count;
+                ingJ["unit_price"] = GW2Client::FormatPrice(p.sellPrice);
+                ingJ["total_price"] = GW2Client::FormatPrice(cost);
+                totalCost += cost;
+                break;
+            }
+        }
+        ingredients.push_back(ingJ);
+    }
+
+    result["ingredients"] = ingredients;
+    result["estimated_craft_cost"] = GW2Client::FormatPrice(totalCost);
+
+    auto outputPrice = m_gw2->GetPrice(recipe.outputItemId);
+    if (outputPrice.found) {
+        result["output_tp_sell"] = GW2Client::FormatPrice(outputPrice.sellPrice);
+        int profit = outputPrice.sellPrice - totalCost;
+        int profitAfterTax = static_cast<int>(outputPrice.sellPrice * 0.85) - totalCost;
+        result["profit_before_tax"] = GW2Client::FormatPrice(profit);
+        result["profit_after_tax"] = GW2Client::FormatPrice(profitAfterTax);
+    }
+
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleWiki(const json& args) {
+    std::string query = args.value("query", "");
+    if (query.empty()) return "{\"error\": \"query parameter required\"}";
+
+    auto results = m_gw2->WikiSearch(query, 3);
+    if (results.empty())
+        return "{\"error\": \"No wiki results for: " + query + "\"}";
+
+    auto page = m_gw2->WikiGetPage(results[0].title);
+    if (!page.found)
+        return "{\"error\": \"Wiki page not found: " + results[0].title + "\"}";
+
+    json result;
+    result["title"] = page.title;
+    result["url"] = results[0].url;
+    result["content"] = TruncateWikitext(page.wikitext);
+
+    if (results.size() > 1) {
+        json related = json::array();
+        for (size_t i = 1; i < results.size(); ++i)
+            related.push_back(results[i].title);
+        result["related"] = related;
+    }
+
+    std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
+    if (!idStr.empty()) {
+        int id = std::stoi(idStr);
+        result["item_id"] = id;
+        m_index->Add(page.title, id);
+    }
+
+    return result.dump();
+}
+
+std::string FunctionHandler::TruncateWikitext(const std::string& wikitext, size_t maxBytes) {
+    if (wikitext.size() <= maxBytes) return wikitext;
+
+    std::string truncated;
+    truncated.reserve(maxBytes);
+
+    size_t pos = 0;
+    bool inInfobox = false;
+    int braceDepth = 0;
+
+    while (pos < wikitext.size() && truncated.size() < maxBytes) {
+        if (pos + 1 < wikitext.size() && wikitext[pos] == '{' && wikitext[pos + 1] == '{') {
+            braceDepth++;
+            if (braceDepth == 1) {
+                auto lower = wikitext.substr(pos, 60);
+                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+                if (lower.find("infobox") != std::string::npos)
+                    inInfobox = true;
+            }
+            if (!inInfobox) {
+                pos += 2;
+                continue;
+            }
+        }
+        if (pos + 1 < wikitext.size() && wikitext[pos] == '}' && wikitext[pos + 1] == '}') {
+            braceDepth--;
+            if (braceDepth <= 0) {
+                inInfobox = false;
+                braceDepth = 0;
+            }
+            if (!inInfobox) {
+                pos += 2;
+                continue;
+            }
+        }
+
+        truncated += wikitext[pos];
+        pos++;
+    }
+
+    if (truncated.size() >= maxBytes)
+        truncated += "\n... (truncated)";
+
+    return truncated;
+}

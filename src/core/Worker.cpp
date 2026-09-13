@@ -9,10 +9,14 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Craft malzemeleri icin maliyet dagilimi goster.\n"
     "- NPC konumlari icin en yakin waypoint ve kisa yol tarifi ver.\n"
     "- Kesin olmayan bilgilerde bunu belirt.\n"
-    "- Kisa ve oz cevaplar ver.";
+    "- Kisa ve oz cevaplar ver.\n"
+    "- Item fiyati, crafting tarifi veya wiki bilgisi gerektiginde uygun tool'u kullan.\n"
+    "- Tool sonuclarini kullaniciya Turkce ozet olarak sun, ham JSON gosterme.";
 
-void Worker::Start(ConfigManager* config, LogFunc logger) {
+void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
+                   LogFunc logger) {
     m_config = config;
+    m_funcHandler = funcHandler;
     m_gemini.SetApiKey(config->GetApiKey());
     m_gemini.SetModelChain(config->GetModelChain());
     if (logger) m_gemini.SetLogger(logger);
@@ -52,15 +56,28 @@ void Worker::RequestChat(const std::string& question) {
     m_cv.notify_one();
 }
 
+void Worker::CancelChat() {
+    ++m_generation;
+    std::lock_guard<std::mutex> lk(m_snapshotMutex);
+    m_snapshot.busy = false;
+    m_snapshot.toolStatus.clear();
+}
+
 void Worker::ClearHistory() {
     {
         std::lock_guard<std::mutex> lk(m_snapshotMutex);
         m_snapshot.messages.clear();
         m_snapshot.error.clear();
         m_snapshot.fallbackUsed = false;
+        m_snapshot.toolStatus.clear();
     }
     m_interactionId.clear();
     m_interactionModel.clear();
+}
+
+void Worker::SetToolStatus(const std::string& status) {
+    std::lock_guard<std::mutex> lk(m_snapshotMutex);
+    m_snapshot.toolStatus = status;
 }
 
 void Worker::Run() {
@@ -89,13 +106,64 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.busy = true;
         m_snapshot.error.clear();
         m_snapshot.fallbackUsed = false;
+        m_snapshot.toolStatus.clear();
         m_snapshot.generation = gen;
     }
 
-    GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
-                                        m_interactionId, m_interactionModel);
+    auto tools = FunctionHandler::GetToolDefinitions();
 
-    if (m_generation != gen) return;
+    GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
+                                        m_interactionId, m_interactionModel,
+                                        tools);
+
+    if (!IsGenerationCurrent(gen)) return;
+
+    int fcRound = 0;
+    while (resp.RequiresAction() && fcRound < MAX_FC_ROUNDS && IsGenerationCurrent(gen)) {
+        fcRound++;
+
+        std::string toolNames;
+        for (auto& fc : resp.functionCalls) {
+            if (!toolNames.empty()) toolNames += ", ";
+            toolNames += fc.name;
+        }
+        SetToolStatus("Araniyor: " + toolNames);
+
+        std::vector<std::pair<std::string, std::pair<std::string, std::string>>> results;
+        for (auto& fc : resp.functionCalls) {
+            if (!IsGenerationCurrent(gen)) return;
+
+            FunctionCall call;
+            call.id = fc.id;
+            call.name = fc.name;
+            call.arguments = fc.arguments;
+            auto result = m_funcHandler->Handle(call);
+            results.push_back({result.callId, {result.name, result.resultText}});
+        }
+
+        if (!IsGenerationCurrent(gen)) return;
+
+        SetToolStatus("Cevap hazirlaniyor...");
+
+        resp = m_gemini.SendFunctionResults(
+            resp.activeModel, resp.interactionId, results, tools, SYSTEM_PROMPT);
+
+        if (!IsGenerationCurrent(gen)) return;
+
+        if (!resp.ok && !resp.RequiresAction() && resp.statusCode == 429) {
+            SetToolStatus("");
+            resp = m_gemini.Ask(question, SYSTEM_PROMPT, "", "", tools);
+            if (!IsGenerationCurrent(gen)) return;
+            continue;
+        }
+    }
+
+    SetToolStatus("");
+
+    if (!resp.ok && resp.error.empty() && resp.statusCode == 200)
+        resp.error = resp.RequiresAction()
+            ? "Tool dongusu limiti asildi"
+            : "Beklenmeyen yanit: " + resp.status;
 
     std::lock_guard<std::mutex> lk(m_snapshotMutex);
     m_snapshot.busy = false;

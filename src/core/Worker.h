@@ -1,6 +1,7 @@
 #pragma once
 #include "GeminiClient.h"
 #include "ConfigManager.h"
+#include "FunctionHandler.h"
 #include <vector>
 #include <string>
 #include <mutex>
@@ -21,6 +22,7 @@ struct ChatSnapshot {
     bool busy = false;
     std::string error;
     std::string activeModel;
+    std::string toolStatus;
     bool fallbackUsed = false;
     uint64_t generation = 0;
 };
@@ -29,18 +31,23 @@ class Worker {
 public:
     using LogFunc = std::function<void(const std::string&)>;
 
-    void Start(ConfigManager* config, LogFunc logger = nullptr);
+    void Start(ConfigManager* config, FunctionHandler* funcHandler,
+               LogFunc logger = nullptr);
     void Stop();
 
     ChatSnapshot GetChatSnapshot() const;
     void RequestChat(const std::string& question);
+    void CancelChat();
     void ClearHistory();
 
 private:
     void Run();
     void DoChat(const std::string& question, uint64_t gen);
+    void SetToolStatus(const std::string& status);
+    bool IsGenerationCurrent(uint64_t gen) const { return m_generation == gen; }
 
     ConfigManager* m_config = nullptr;
+    FunctionHandler* m_funcHandler = nullptr;
     GeminiClient m_gemini;
 
     std::thread m_thread;
@@ -59,4 +66,5 @@ private:
     std::string m_interactionModel;
 
     static const std::string SYSTEM_PROMPT;
+    static constexpr int MAX_FC_ROUNDS = 4;
 };

@@ -70,20 +70,24 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — BEKLIYOR
+### Faz 2: Akilli Veri Entegrasyonu — DEVAM EDIYOR
 
-**Icerik:**
-- GW2DataClient — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/maps, /v2/continents
-- WikiClient — MediaWiki API (opensearch + parse)
-- ItemIndex — lokal item isim→ID cache (items_index.json, ~100K item)
+**v0.3.0 (13 Eylul 2026) — Tamamlandi:**
+- GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
+- ItemIndex — lazy item isim→ID cache (items_index.json), wiki lookups ile doldurulur
 - FunctionHandler — Gemini function_call → API cagri → function_result dongusu
-- 5 tool tanimi: gw2_item_search, gw2_tp_price, gw2_recipe_lookup, gw2_map_info, gw2_wiki_search
+- 3 tool (birlestirilmis): gw2_item_info (item+fiyat tek seferde), gw2_recipe (tarif+malzeme+maliyet+kar), gw2_wiki (wiki arama+icerik)
 - Fiyat formatlama (copper → Xg Ys Zc)
-- Waypoint chat_link (API'den dogrudan)
-- imgui_markdown (zengin metin render)
-- Per-call timeout + iptal butonu
+- Gemini function calling loop: Ask(tools) → requires_action → FunctionHandler → SendFunctionResults → final response. Max 4 round.
+- FC 429 handling: pinned model retry (≤12s), else cooldown + chain fallback restart
+- Iptal butonu (generation bump ile), Temizle butonu (sohbet gecmisi silme)
+- Tool status gosterimi (yesil, "Araniyor: gw2_item_info...")
+
+**Faz 2 kalan (v0.3.1+):**
+- gw2_map tool — /v2/maps, waypoint chat_link
+- imgui_markdown — zengin metin render (ayri release: font handling + link callback riski)
 - ~~Turkce font fix~~ (v0.2.8'de tamamlandi — Options + cevap calisiyor, input ImGui/Nexus siniri)
-- Google Search grounding: ucretli key varsa tools ekle (model_tier == "paid" kontrolu)
+- Google Search grounding: ucretli key varsa tools ekle (ertelendi — free tier'da test edilemez)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
 

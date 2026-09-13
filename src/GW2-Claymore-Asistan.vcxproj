@@ -98,6 +98,9 @@ exit /b 0</Command>
     <ClCompile Include="core\HttpClient.cpp" />
     <ClCompile Include="core\ConfigManager.cpp" />
     <ClCompile Include="core\GeminiClient.cpp" />
+    <ClCompile Include="core\GW2Client.cpp" />
+    <ClCompile Include="core\ItemIndex.cpp" />
+    <ClCompile Include="core\FunctionHandler.cpp" />
     <ClCompile Include="core\Worker.cpp" />
     <ClCompile Include="chat\ChatWindow.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
@@ -109,6 +112,9 @@ exit /b 0</Command>
     <ClInclude Include="core\HttpClient.h" />
     <ClInclude Include="core\ConfigManager.h" />
     <ClInclude Include="core\GeminiClient.h" />
+    <ClInclude Include="core\GW2Client.h" />
+    <ClInclude Include="core\ItemIndex.h" />
+    <ClInclude Include="core\FunctionHandler.h" />
     <ClInclude Include="core\Worker.h" />
     <ClInclude Include="chat\ChatWindow.h" />
     <ClInclude Include="nexus\Nexus.h" />

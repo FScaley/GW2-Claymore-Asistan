@@ -51,6 +51,7 @@ static const ImVec4 COL_DIM       = ImVec4(0.60f, 0.58f, 0.50f, 1.0f);
 static const ImVec4 COL_BODY      = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
 static const ImVec4 COL_CHATLINK  = ImVec4(0.40f, 0.85f, 0.95f, 1.0f);
 static const ImVec4 COL_BOLD      = ImVec4(1.00f, 0.84f, 0.00f, 1.0f);
+static const ImVec4 COL_TOOL      = ImVec4(0.40f, 0.90f, 0.60f, 1.0f);
 
 void ChatWindow::CopyToClipboard(const std::string& utf8) {
     if (!OpenClipboard(nullptr)) return;
@@ -226,7 +227,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, COL_DIM);
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextWrapped("GW2 hakkinda bir soru sor...\n\nOrnek:\n- Dusk nedir?\n- Ascended armor nasil yapilir?\n- Queensdale'de en yakin waypoint?");
+        ImGui::TextWrapped("GW2 hakkinda bir soru sor...\n\nOrnek:\n- Dusk kac altin?\n- Deldrimor Steel Ingot tarifi nedir?\n- Miyani nerede?\n- Ascended armor nasil yapilir?");
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
     }
@@ -273,11 +274,20 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
 
     if (snap.busy) {
         if (!snap.messages.empty()) ImGui::Spacing();
-        int dots = static_cast<int>(fmod(ImGui::GetTime() * 2.0, 4.0));
-        const char* anim[] = {"Dusunuyor", "Dusunuyor.", "Dusunuyor..", "Dusunuyor..."};
-        ImGui::PushStyleColor(ImGuiCol_Text, COL_ASSISTANT);
-        ImGui::Text("%s", anim[dots]);
-        ImGui::PopStyleColor();
+
+        if (!snap.toolStatus.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, COL_TOOL);
+            int dots = static_cast<int>(fmod(ImGui::GetTime() * 2.0, 4.0));
+            std::string dotStr(dots, '.');
+            ImGui::Text("%s%s", snap.toolStatus.c_str(), dotStr.c_str());
+            ImGui::PopStyleColor();
+        } else {
+            int dots = static_cast<int>(fmod(ImGui::GetTime() * 2.0, 4.0));
+            const char* anim[] = {"Dusunuyor", "Dusunuyor.", "Dusunuyor..", "Dusunuyor..."};
+            ImGui::PushStyleColor(ImGuiCol_Text, COL_ASSISTANT);
+            ImGui::Text("%s", anim[dots]);
+            ImGui::PopStyleColor();
+        }
     }
 
     if (snap.messages.size() != m_lastMsgCount) {
@@ -295,32 +305,57 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
     ImGui::Separator();
     ImGui::PopStyleColor();
 
-    float buttonWidth = 56.0f;
-    float inputWidth = ImGui::GetContentRegionAvail().x - buttonWidth - ImGui::GetStyle().ItemSpacing.x;
+    float clearWidth = 56.0f;
+    float cancelWidth = 56.0f;
+    float sendWidth = 56.0f;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
 
-    bool disabled = snap.busy;
-    if (disabled)
+    if (snap.busy) {
+        float inputWidth = ImGui::GetContentRegionAvail().x - cancelWidth - spacing;
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
-
-    ImGui::PushItemWidth(inputWidth);
-    if (m_refocus) {
-        ImGui::SetKeyboardFocusHere();
-        m_refocus = false;
-    }
-    bool enterPressed = ImGui::InputText("##chatinput", m_inputBuf, sizeof(m_inputBuf),
-                                          ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::PopItemWidth();
-    ImGui::SameLine();
-    bool sendClicked = ImGui::Button("Sor##send", ImVec2(buttonWidth, 0));
-
-    if (disabled)
+        ImGui::PushItemWidth(inputWidth);
+        ImGui::InputText("##chatinput", m_inputBuf, sizeof(m_inputBuf));
+        ImGui::PopItemWidth();
         ImGui::PopStyleVar();
+        ImGui::SameLine();
 
-    if ((enterPressed || sendClicked) && !disabled && m_inputBuf[0] != '\0') {
-        worker->RequestChat(m_inputBuf);
-        m_inputBuf[0] = '\0';
-        m_scrollToBottom = true;
-        m_refocus = true;
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.80f, 0.25f, 0.20f, 0.50f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.90f, 0.30f, 0.25f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.00f, 0.35f, 0.30f, 0.90f));
+        if (ImGui::Button("Iptal##cancel", ImVec2(cancelWidth, 0))) {
+            worker->CancelChat();
+        }
+        ImGui::PopStyleColor(3);
+    } else {
+        float inputWidth = ImGui::GetContentRegionAvail().x - sendWidth - clearWidth - spacing * 2;
+
+        ImGui::PushItemWidth(inputWidth);
+        if (m_refocus) {
+            ImGui::SetKeyboardFocusHere();
+            m_refocus = false;
+        }
+        bool enterPressed = ImGui::InputText("##chatinput", m_inputBuf, sizeof(m_inputBuf),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        bool sendClicked = ImGui::Button("Sor##send", ImVec2(sendWidth, 0));
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.40f, 0.35f, 0.25f, 0.30f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.45f, 0.30f, 0.50f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.55f, 0.40f, 0.70f));
+        if (ImGui::Button("Temizle##clear", ImVec2(clearWidth, 0))) {
+            worker->ClearHistory();
+            m_lastMsgCount = 0;
+        }
+        ImGui::PopStyleColor(3);
+
+        if ((enterPressed || sendClicked) && m_inputBuf[0] != '\0') {
+            worker->RequestChat(m_inputBuf);
+            m_inputBuf[0] = '\0';
+            m_scrollToBottom = true;
+            m_refocus = true;
+        }
     }
 
     ImGui::End();

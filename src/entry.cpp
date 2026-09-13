@@ -6,6 +6,9 @@
 #include "imgui/imgui.h"
 #include "core/ConfigManager.h"
 #include "core/Worker.h"
+#include "core/GW2Client.h"
+#include "core/ItemIndex.h"
+#include "core/FunctionHandler.h"
 #include "chat/ChatWindow.h"
 
 void AddonLoad(AddonAPI_t* aApi);
@@ -22,6 +25,9 @@ Mumble::Data* MumbleLink = nullptr;
 ConfigManager* g_config = nullptr;
 Worker* g_worker = nullptr;
 ChatWindow* g_chatWindow = nullptr;
+GW2Client* g_gw2 = nullptr;
+ItemIndex* g_itemIndex = nullptr;
+FunctionHandler* g_funcHandler = nullptr;
 std::string g_configPath;
 std::string g_addonDir;
 bool g_showWindow = true;
@@ -44,8 +50,8 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.APIVersion = NEXUS_API_VERSION;
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
-    AddonDef.Version.Minor = 2;
-    AddonDef.Version.Build = 8;
+    AddonDef.Version.Minor = 3;
+    AddonDef.Version.Build = 0;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -81,10 +87,15 @@ void AddonLoad(AddonAPI_t* aApi) {
         g_config->Save(g_configPath);
     }
 
+    g_gw2 = new GW2Client();
+    g_itemIndex = new ItemIndex();
+    g_itemIndex->Load(g_addonDir + "\\items_index.json");
+    g_funcHandler = new FunctionHandler(g_gw2, g_itemIndex);
+
     g_chatWindow = new ChatWindow();
     g_worker = new Worker();
     auto* api = APIDefs;
-    g_worker->Start(g_config, [api](const std::string& msg) {
+    g_worker->Start(g_config, g_funcHandler, [api](const std::string& msg) {
         api->Log(LOGL_WARNING, "Claymore", msg.c_str());
     });
 
@@ -105,7 +116,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.2.8 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.3.0 loaded.");
 }
 
 void AddonUnload() {
@@ -119,6 +130,14 @@ void AddonUnload() {
 
     if (g_worker) { g_worker->Stop(); delete g_worker; g_worker = nullptr; }
     if (g_chatWindow) { delete g_chatWindow; g_chatWindow = nullptr; }
+
+    if (g_itemIndex) {
+        g_itemIndex->Save(g_addonDir + "\\items_index.json");
+        delete g_itemIndex; g_itemIndex = nullptr;
+    }
+    if (g_funcHandler) { delete g_funcHandler; g_funcHandler = nullptr; }
+    if (g_gw2) { delete g_gw2; g_gw2 = nullptr; }
+
     if (g_config) {
         g_config->Save(g_configPath);
         delete g_config; g_config = nullptr;
@@ -139,7 +158,7 @@ void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v0.2.8");
+    ImGui::Text("Claymore Asistan v0.3.0");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 
@@ -158,7 +177,7 @@ void AddonOptions() {
         if (g_worker) {
             g_worker->Stop();
             auto* api2 = APIDefs;
-            g_worker->Start(g_config, [api2](const std::string& msg) {
+            g_worker->Start(g_config, g_funcHandler, [api2](const std::string& msg) {
                 api2->Log(LOGL_WARNING, "Claymore", msg.c_str());
             });
         }
@@ -178,5 +197,12 @@ void AddonOptions() {
         chainStr += chain[i];
     }
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Model zinciri: %s", chainStr.c_str());
+
+    if (g_itemIndex) {
+        size_t count = g_itemIndex->Size();
+        if (count > 0)
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Item cache: %zu item", count);
+    }
+
     if (f) ImGui::PopFont();
 }

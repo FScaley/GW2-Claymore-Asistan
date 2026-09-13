@@ -4,16 +4,27 @@
 #include <vector>
 #include <chrono>
 #include <functional>
+#include <json.hpp>
+
+struct FunctionCallInfo {
+    std::string id;
+    std::string name;
+    nlohmann::json arguments;
+};
 
 struct GeminiResponse {
     std::string text;
     std::string interactionId;
     std::string error;
     std::string activeModel;
+    std::string status;
     int statusCode = 0;
     int retrySeconds = 0;
     bool ok = false;
     bool fallbackUsed = false;
+    std::vector<FunctionCallInfo> functionCalls;
+
+    bool RequiresAction() const { return status == "requires_action" && !functionCalls.empty(); }
 };
 
 struct ModelCooldown {
@@ -32,7 +43,15 @@ public:
     GeminiResponse Ask(const std::string& question,
                        const std::string& systemPrompt,
                        const std::string& prevInteractionId = "",
-                       const std::string& interactionModel = "");
+                       const std::string& interactionModel = "",
+                       const nlohmann::json& tools = nlohmann::json());
+
+    GeminiResponse SendFunctionResults(
+        const std::string& model,
+        const std::string& interactionId,
+        const std::vector<std::pair<std::string, std::pair<std::string, std::string>>>& results,
+        const nlohmann::json& tools,
+        const std::string& systemPrompt = "");
 
     bool HasApiKey() const { return !m_apiKey.empty(); }
 
@@ -48,9 +67,10 @@ public:
 
 private:
     GeminiResponse DoRequest(const std::string& model,
-                             const std::string& question,
-                             const std::string& systemPrompt,
-                             const std::string& prevInteractionId);
+                             const std::string& jsonBody);
+
+    GeminiResponse ParseResponse(const std::string& body, int statusCode,
+                                 const std::string& model);
 
     int ParseRetrySeconds(const std::string& msg) const;
     void Log(const std::string& msg) const;
