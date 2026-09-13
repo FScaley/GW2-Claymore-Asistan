@@ -140,7 +140,7 @@ Detaylar: `faz0-rapor.md`
 - FC log satirina tool suresi (ms) eklendi — NPC aramalari 10-30 GET, olcum lazim
 - test_wiki F (Gorrik: Kourna girisi + Allied Encampment WP + npc_here=Thunderhead) ve G (Toxic Spider Queen: noktali virgullu alan listesi → Kessex Hills ≥10 WP) — once KIRMIZI gozlendi (map_name yok / Thunderhead 4 WP), fix sonrasi YESIL. Tani icin her alanin ayri `gw2_map` cozumu yazdirildi: Kourna 1288 dogru cozulmus ama 0 WP → API probe → floor 49
 - test_gemini TEST 7: Worker ile "kourna da gorrik nerede, en yakin waypoint?" — Lite `gw2_wiki` + ek `gw2_map("Domain of Kourna")`, cevapta gercek kod, strip yok, red yok. TEST 5'e `checks:` satiri eklendi. ~12 RPM
-- Bilinen limitler: NPC gw2_wiki en pahali tool (10-30 GET, 10-30 s worst case; waypoint fetch cache'siz), instance haritalarda 5 bos floor probe, `npc_here` tek koordinata dayanir (cok gorunumlu NPC'de editorun sectigi), test F canli wiki durumuna bagli, Lite gw2_map'i gereksiz tekrar cagirabiliyor, `{{Stub}}` uyarisi content basina siziyor (zararsiz)
+- Bilinen limitler: NPC gw2_wiki en pahali tool (10-30 GET, 10-30 s worst case; waypoint fetch cache'siz), instance haritalarda 5 bos floor probe, `npc_here` tek koordinata dayanir (cok gorunumlu NPC'de editorun sectigi), test F canli wiki durumuna bagli, Lite gw2_map'i gereksiz tekrar cagirabiliyor, `{{Stub}}` uyarisi content basina siziyor (zararsiz), `items_index.json` diskte hic olusmamis (Save yalnizca AddonUnload'da — oyun cikisinda calismiyor; cache oturum bazli, dogruluk sorunu degil; istenirse Add sonrasi/periyodik Save)
 
 **Faz 2 kalan (ertelenmis / kosullu):**
 - Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
