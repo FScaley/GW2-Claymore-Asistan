@@ -52,6 +52,15 @@ Detaylar: `faz0-rapor.md`
 - PushID cakismasi duzeltildi, post-build path duzeltildi
 - Nexus auto-update: UP_GitHub + UpdateLink
 
+**v0.2.0 (13 Eylul 2026):**
+- Model zinciri: gemini-3.5-flash-lite (30 RPM) → gemini-3.5-flash (15 RPM) → gemini-3.8-flash (15 RPM)
+- Per-model cooldown: 429'da model sogutuluyor, sonraki deneniyor
+- Rate limit havuzlari model basina (test ile dogrulandi: Lite 200, 3.8-flash 429 ayni anda)
+- 429 tam hata mesaji Nexus loguna yaziliyor (diagnostik)
+- Interaction model takibi: fallback'ta ID sifirlanir (cross-model ID test edilemedi)
+- ConfigManager: model_chain array (eski model/model_fallback yok sayilir)
+- UI: aktif model gosterimi, yedek kullanildiginda turuncu
+
 **Bilinen limitler:**
 - Tam markdown render yok (sadece **bold** + [&chatlink] — imgui_markdown Faz 2'de)
 - Function calling yok (Gemini kendi bilgisiyle cevap verir)
@@ -127,6 +136,7 @@ Detaylar: `faz0-rapor.md`
 - Eski modeller (2.5): yeni kullanicilara kapali
 - Key format: AQ. prefix gecerli
 - Response parse: steps[].content[].text (type=="model_output")
-- 429'da fallback yapilmaz (her deneme kotayi tuketir)
+- 429'da per-model cooldown + zincir fallback (v0.2.0'da degistirildi — rate limit havuzlari model basina)
+- Model zinciri: gemini-3.5-flash-lite → gemini-3.5-flash → gemini-3.8-flash
 - Faz 2: model_tier=="paid" → Pro model + grounding tools aktif
-- 500/503'te fallback model dene
+- 500/503'te de zincir fallback

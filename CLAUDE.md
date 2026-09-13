@@ -31,7 +31,7 @@ Output: `build\Release\claymore-asistan.dll`. Post-build copies to `E:\Guild War
 cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/GeminiClient.cpp core/ConfigManager.cpp /link winhttp.lib
 ```
 
-`test_gemini.exe` — live Gemini API test (requires config with API key at `E:\Guild Wars 2\addons\claymore-asistan\config.json`). Tests: single question, multi-turn (previous_interaction_id). Costs 2 of 20 RPM free tier. **Run this before every DLL handoff.**
+`test_gemini.exe` — live Gemini API test (requires config with API key at `E:\Guild Wars 2\addons\claymore-asistan\config.json`). Tests: single question, multi-turn with interaction ID + model tracking, cooldown status. Costs 2 of 30 RPM free tier (Lite model). **Run this before every DLL handoff.**
 
 ## Architecture
 
@@ -49,22 +49,25 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 
 ### Module Layout
 
-- **`src/entry.cpp`** — Nexus DLL entry, AddonLoad/Unload/Render/Options, all ImGui rendering coordination. Signature: -77043 (unique, TP-Assistant is -77042).
+- **`src/entry.cpp`** — Nexus DLL entry, AddonLoad/Unload/Render/Options, all ImGui rendering coordination. Signature: -77043 (unique, TP-Assistant is -77042). Logger lambda injected into Worker for Nexus log access from worker thread.
 - **`src/core/`** — Infrastructure:
   - `HttpClient` — WinHTTP wrapper. GET (10s timeout) + POST (45s timeout, custom headers). POST added for Gemini API.
-  - `GeminiClient` — Gemini Interactions API client. `Ask(question, systemPrompt, prevInteractionId)` → `GeminiResponse{text, interactionId, error, statusCode, ok}`. Fallback model on 500/503 (model-spesifik high demand). 429 rate limit'te fallback yapilmaz (429 body'si per-model olabilir ama her deneme kotayi tuketir). Response parse: `steps[]` where `type=="model_output"` → join `content[].text`.
-  - `ConfigManager` — JSON config (API key, model, model_fallback, model_tier, window position/size). Dir: Nexus addon data path (`addons/claymore-asistan/`).
-  - `Worker` — Background thread: chat requests, owns ChatSnapshot behind `m_snapshotMutex`. Generation-based cancel. System prompt: Turkish GW2 expert, search in English, answer in Turkish.
+  - `GeminiClient` — Gemini Interactions API client. Model chain with per-model cooldown. `Ask(question, systemPrompt, prevInteractionId, interactionModel)` → iterates chain, skips cooled-down models, returns `GeminiResponse{text, interactionId, error, activeModel, retrySeconds, ok, fallbackUsed}`. On 429: sets cooldown from parsed retry seconds, tries next model. On 500/503: tries next. Interaction ID only sent to the model that created it (cross-model ID transfer test edilemedi — her denemede 429 nedeniyle). Full 429 message logged for diagnostics.
+  - `ConfigManager` — JSON config (API key, model_chain array, window position/size). Dir: Nexus addon data path (`addons/claymore-asistan/`). Old `model`/`model_fallback` keys are ignored; `model_chain` is the single source.
+  - `Worker` — Background thread: chat requests, owns ChatSnapshot behind `m_snapshotMutex`. Generation-based cancel. Tracks `m_interactionId` + `m_interactionModel` for context-aware model switching. System prompt: Turkish GW2 expert, search in English, answer in Turkish.
 - **`src/chat/`** — UI:
-  - `ChatWindow` — ImGui chat window with gw2pao-authentic GW2 theme (PaleGoldenrod #EEE8AA accent, dark transparent background, sharp corners). PushGW2Style/PopGW2Style pattern. Scrollable message area, Enter-to-send, animated "Dusunuyor..." dots.
+  - `ChatWindow` — ImGui chat window with gw2pao-authentic GW2 theme (PaleGoldenrod #EEE8AA accent, dark transparent background, sharp corners). PushGW2Style/PopGW2Style pattern. Shows active model name (orange when fallback used). Scrollable message area, Enter-to-send, animated "Dusunuyor..." dots.
 - **`src/map/`** — Reserved for Faz 3 (map markers, TacO pack reading, 3D projection).
 - **`src/data/`** — Reserved for Faz 3 (route management).
 
 ### Key Patterns
 
+- **Model chain + cooldown:** `GeminiClient` iterates `model_chain` (default: `[gemini-3.5-flash-lite, gemini-3.5-flash, gemini-3.8-flash]`). On 429, model gets cooldown (parsed retry seconds, default 30s). Next model tried. Rate limit pools are per-model (verified: Lite returns 200 while 3.8-flash returns 429).
+- **429'da fallback:** v0.2.0'da etkinlestirildi. Eski karar "429'da fallback yapilmaz" tersi yonde degistirildi — rate limit havuzlari model basina oldugu icin bir modelin 429'u diger modeli etkilemiyor.
 - **Snapshot pattern:** Worker writes ChatSnapshot under mutex. Render copies. Never pass pointers across threads.
 - **Generation-based cancel:** `m_generation` atomic incremented per request. If changed after `Ask()` returns, result discarded.
-- **Question hand-off:** render→worker via `m_pendingQuestion` under `m_cvMutex`, copied out in `Run()` under lock (same as TP-Assistant's `m_inventoryIdentity` pattern).
+- **Question hand-off:** render→worker via `m_pendingQuestion` under `m_cvMutex`, copied out in `Run()` under lock.
+- **Interaction model tracking:** Worker stores `(m_interactionId, m_interactionModel)`. `Ask()` only sends the interaction ID to the model that created it. On fallback, context resets (fresh turn on the fallback model).
 
 ### Gemini API Notes
 
@@ -73,12 +76,14 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 - **Multi-turn:** `previous_interaction_id` field (server-side state)
 - **System instruction:** sent every turn (interaction-scoped)
 - **Google Search grounding:** FREE TIER'DA CALISMAZ (kota 0). Sadece ucretli key ile `tools: [{"type": "google_search"}]` gonderilir. Free tier'da Gemini kendi bilgisiyle cevap verir.
-- **Rate limit (free tier):** 20 RPM. Pro modeller: limit 0 (kullanilamaz).
-- **Fallback:** 500/503'te model_fallback'a gecer. 429'da fallback yapilmaz (her deneme kotayi tuketir).
-- **model_tier config:** Okunur ama henuz kullanilmaz. Faz 2'de: `model_tier=="paid"` → Pro model + Google Search grounding aktif.
+- **Rate limit (free tier, raporlanan):** gemini-3.5-flash-lite: 30 RPM, gemini-3.5-flash/3.8-flash: 15 RPM. RPD: ~1,500. Pro modeller: limit 0 (kullanilamaz).
+- **Fallback:** 429'da cooldown + zincir fallback. 500/503'te de fallback. Rate limit havuzlari model basina (dogrulanmis).
+- **Cross-model interaction ID:** Test edilemedi (her denemede 429 nedeniyle). Guvenli tasarim: fallback'ta ID sifirlanir, kullanici bir mesaj icin baglam kaybeder ama cevap alir.
+- **model_chain config:** `["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]` — eski `model`/`model_fallback` yok sayilir.
 - **Response parse:** `steps[]` → `type=="model_output"` → `content[].text` birlestir. `thought` step'leri gosterilmez.
 - **Key format:** `AQ.` prefix gecerli (eski `AIzaSy` bilgisi yanlis).
-- **Eski modeller (2.5):** Yeni kullanıcılara kapali (404).
+- **Eski modeller (2.5):** Yeni kullanicilara kapali (404).
+- **Diagnostics:** 429 aldiginda tam hata mesaji Nexus loguna yazilir (`[429] model: ...`). Bu mesaj hangi limitin asildigini gosterir (RPM/RPD/kota).
 
 ### UI Theme (gw2pao palette)
 
@@ -89,6 +94,7 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 - WindowRounding: 0 (sharp corners, GW2 style)
 - User messages: blue (0.55, 0.75, 1.0) — GW2 chat player color
 - Assistant messages: PaleGoldenrod
+- Fallback indicator: orange (1.0, 0.75, 0.3) — model tag turns orange when fallback used
 
 ### Known Limitations (Faz 1)
 
@@ -100,7 +106,7 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 
 ### Data Files (addon directory, gitignored)
 
-- `config.json` — API key (sensitive — never commit!), model settings, window position
+- `config.json` — API key (sensitive — never commit!), model_chain, window position
 
 ### Sister Project
 
