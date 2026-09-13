@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — DEVAM EDIYOR
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -117,8 +117,20 @@ Detaylar: `faz0-rapor.md`
 - Kalan: bazi hint'ler Lite'ta hafizadan suslendi (wiki hint "Dabiji Hollows" derken model "Pogahn Bluffs" yazdi) — model davranisi, veri eksigi degil; prompt kurali ile azaltildi, Flash'ta daha iyi bekleniyor. Icerik butunlugu (item adlari/sayilari) deterministik
 - Bilinen limitler: alt koleksiyon fetch'leri seri, ~50KB HTML, cache yok (ayni mount iki kez = 4-5 tam fetch; yalnizca FC logunda tekrarlanan ayni gw2_wiki sorgusu gorulurse sayfa cache eklenir). ExtractTableRows mech1 tablosu icinde ic ice `<table>` desteklemiyor (gorulmedi). ExtractSubCollectionNames yalnizca iki sablonu taniyor — baska sablonla baglanan alt koleksiyonlar icin Gemini gw2_wiki'yi adiyla cagirmali. location→waypoints hala `| location = [[Map]]` formati gerektiriyor
 
-**Faz 2 kalan:**
-- imgui_markdown — zengin metin render (ayri release: font handling + link callback riski)
+**v0.3.8 (13 Eylul 2026) — Markdown-lite renderer:**
+- Problem: v0.3.7 cevaplari uzun yapili listeler (`### 1. Beetle Juice...`, `- Inquest Beetle Notes`, `` `[&BLoDAAA=]` ``) — eski renderer yalnizca `**bold**` + `[&kod]` biliyordu, `###`, `-`, backtick ham karakter olarak gorunuyordu
+- imgui_markdown degerlendirildi ve REDDEDILDI: link modeli `[text](url)`, basliklar icin ayri ImFont*, chatlink kopyalama davranisi callback icinde yeniden yazilmali. Mevcut ozel renderer genisletildi
+- Yeni modul `src/chat/Markdown.h/.cpp` (namespace Markdown, ImGui bagimsiz → offline test edilebilir): `Parse(text)` satir-bazli siniflandirma (Blank/Plain/Header/Bullet/Numbered/Rule, level, indent = bosluk/2, marker), `TokenizeInline` satir ici kelime-akis token'lari (Bold, InlineCode, ChatLink, Plain). `**` aramasi satir icinde kalir (sarkan `**` mesajin kalanini yutmaz — dusurulur, tek basinaysa takip eden bosluk da). Backtick icindeki `[&...]` → ChatLink (backtick'ler atilir); baska icerik → InlineCode. `IsChatLink` dogrulamasi (`[&` + base64 + `]`)
+- ChatWindow: `RenderFormattedText` = Parse + satir yerlesimi. Blank → tek Spacing (NewLine degil — Gemini cok bosluk birakir); Rule → altin Separator; Header → Spacing + altin renk + Spacing (ikinci font YOK — Nexus atlas riski, istenirse ayri release); Bullet/Numbered → soluk isaret (`-` / `1.`), `Indent(isaretGenisligi)` + `SameLine` ile sarilan satirlar metnin altina hizalanir; ic ice indent 4-bosluk-genisligi/seviye. `RenderTokens` ortak kelime-akis (SameLine(0,0), tasma → NewLine; ChatLink = Selectable + PushID + tiklayinca kopyala)
+- System prompt FORMAT satiri: `**bold**`, `###`, `-`, `` `kod` `` kullan; markdown tablo/resim/link ASLA — tablolar boru corbasi olarak gorunurdu
+- HandleMap: ResolveMapId sonrasi iptal kontrolu eklendi (v0.3.7'de parametre alinip kullanilmiyordu)
+- Yeni `src/test_markdown.cpp` → test_markdown.exe (sifir maliyet, ag yok): gercek TEST 5/TEST 6 Gemini cevaplari + edge-case blogu; 3 level-3 baslik + 27 bullet, `* **bold**` → Bullet+Bold, backtick'li chatlink → tek ChatLink ve sifir backtick, numarali/ic ice/rule/sarkan isaret kontrolleri — 23/23 gecti. Build: `cl /EHsc /std:c++17 /MT /utf-8 test_markdown.cpp chat/Markdown.cpp`. Markdown.cpp/RenderFormattedText degisikliklerinin regresyon kapisi
+- Dogrulama durumu: parser offline dogrulandi; yerlesim (indent/sarma/bosluk) oyun ici bakis gerektirir — ImGui disarida render edilemez
+- Bilinen limitler: tablo/resim/link/italik yok; baslik yalnizca renk+bosluk; ic ice indent kaynaktan genis (kozmetik); satir basi `N. ` duz metin numarali sayilir; backtick icinde `**` kod span'ini bozar (Gemini uretmez)
+
+**Faz 2 kalan (ertelenmis / kosullu):**
+- ~~imgui_markdown~~ (v0.3.8'de markdown-lite renderer ile kapatildi — imgui_markdown reddedildi, yukariya bak)
+- Baslik icin ikinci (buyuk) font — istenirse ayri release (Nexus Fonts_AddFromFile + atlas rebuild null race)
 - ~~gw2_map tool~~ (v0.3.3'te tamamlandi)
 - ~~Turkce font fix~~ (v0.2.8'de tamamlandi)
 - Google Search grounding: ucretli key varsa tools ekle (ertelendi — free tier'da test edilemez)
