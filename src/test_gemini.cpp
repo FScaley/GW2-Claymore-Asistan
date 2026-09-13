@@ -346,6 +346,139 @@ int main(int argc, char** argv) {
                (all.find("bulunamadi") != std::string::npos || all.find("bulunamadı") != std::string::npos));
     }
 
+    printf("\n=== TEST 10: Vendor completeness — Gharr Leadclaw multi-turn (Worker) ===\n");
+    {
+        // Gharr Leadclaw has 7+ locations, each with conditions (Wayfinder mastery, Best Friends Forever
+        // achievement, etc). Turn 1 must list most of them with conditions. Turn 2 contradicts ("yok") and
+        // the model must re-call gw2_wiki and quote the wiki's location, not explain from memory.
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        std::vector<std::string> logs;
+        Worker w;
+        w.Start(&config, &fht, [&logs](const std::string& m) {
+            logs.push_back(m);
+            printf("  [LOG] %s\n", m.c_str());
+        });
+
+        w.RequestChat("250 Pile of Auric Dust var, Gharr Leadclaw nerede ve sart var mi?");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap1 = w.GetChatSnapshot();
+        std::string turn1;
+        for (auto& m : snap1.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) turn1 += m.text;
+        }
+
+        int locCount = 0;
+        const char* locs[] = {"Lion's Arch", "Wizard's Tower", "Arborstone",
+                              "Dragon's Stand", "Eye of the North", "Lowland Shore"};
+        for (auto& loc : locs)
+            if (turn1.find(loc) != std::string::npos) locCount++;
+        bool hasWayfinder = turn1.find("Wayfinder") != std::string::npos
+                         || turn1.find("wayfinder") != std::string::npos;
+        bool hasDragonsStand = turn1.find("Dragon's Stand") != std::string::npos
+                            || turn1.find("Dragon\xe2\x80\x99s Stand") != std::string::npos;
+
+        printf("checks turn1: locations=%d wayfinder=%d dragons_stand=%d\n",
+               locCount, hasWayfinder, hasDragonsStand);
+
+        logs.clear();
+        w.RequestChat("dragon's stand de yok");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap2 = w.GetChatSnapshot();
+        for (size_t i = snap1.messages.size(); i < snap2.messages.size(); ++i) {
+            auto& m = snap2.messages[i];
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+        }
+        std::string turn2;
+        for (auto it = snap2.messages.rbegin(); it != snap2.messages.rend(); ++it)
+            if (it->role == ChatMessage::Assistant) { turn2 = it->text; break; }
+
+        bool fcWikiMain = false;
+        for (auto& l : logs)
+            if (l.find("FC gw2_wiki {\"query\":\"Gharr Leadclaw\"}") != std::string::npos) fcWikiMain = true;
+        bool hasPactBase = turn2.find("Pact Base Camp") != std::string::npos;
+        bool halluc = turn2.find("eski konum") != std::string::npos
+                   || turn2.find("ta\xc5\x9f" "\xc4\xb1n") != std::string::npos    // taşın
+                   || turn2.find("tasin") != std::string::npos
+                   || turn2.find("kald\xc4\xb1r") != std::string::npos             // kaldır
+                   || turn2.find("kaldir") != std::string::npos
+                   || turn2.find("meta event") != std::string::npos
+                   || turn2.find("Meta-Event") != std::string::npos
+                   || turn2.find("meta ") != std::string::npos
+                   || turn2.find("a\xc5\x9f" "ama") != std::string::npos           // aşama
+                   || turn2.find("asama") != std::string::npos
+                   || turn2.find("a\xc3\xa7\xc4\xb1l") != std::string::npos        // açıl
+                   || turn2.find("acil") != std::string::npos
+                   || turn2.find("g\xc3\xb6r\xc3\xbcnmeyebil") != std::string::npos // görünmeyebil
+                   || turn2.find("gorunmeyebil") != std::string::npos
+                   || turn2.find("g\xc3\xbc" "ncelle") != std::string::npos        // güncelle
+                   || turn2.find("guncelle") != std::string::npos;
+
+        w.Stop();
+        printf("checks turn2: fc_wiki_main=%d pact_base=%d halluc=%d\n",
+               fcWikiMain, hasPactBase, halluc);
+        printf("model=%s fallback=%d error=%s\n",
+               snap2.activeModel.c_str(), snap2.fallbackUsed, snap2.error.c_str());
+    }
+
+    printf("\n=== TEST 11: Acquisition completeness — Auric Dust (Worker) ===\n");
+    {
+        // Wiki lists 4+ source kinds for Pile of Auric Dust: vendors (Gharr), chests/containers,
+        // gathering (Exalted/Noxious), story rewards (City of Hope / Strange Observations).
+        // The model must relay at least 3 kinds and name a story step.
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        Worker w;
+        w.Start(&config, &fht, [](const std::string& m) {
+            printf("  [LOG] %s\n", m.c_str());
+        });
+        w.RequestChat("Auric Dust nereden gelir?");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap = w.GetChatSnapshot();
+        w.Stop();
+        std::string all;
+        for (auto& m : snap.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) all += m.text;
+        }
+        printf("model=%s fallback=%d error=%s\n",
+               snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
+
+        int sources = 0;
+        bool hasVendor = all.find("Gharr") != std::string::npos;
+        bool hasChest = all.find("Chest") != std::string::npos
+                     || all.find("Cache") != std::string::npos;
+        bool hasStory = all.find("City of Hope") != std::string::npos
+                     || all.find("Strange Observations") != std::string::npos;
+        bool hasGather = all.find("Exalted") != std::string::npos
+                      || all.find("Noxious") != std::string::npos;
+        if (hasVendor) sources++;
+        if (hasChest) sources++;
+        if (hasStory) sources++;
+        if (hasGather) sources++;
+
+        printf("checks: sources=%d vendor=%d chest=%d story=%d gather=%d\n",
+               sources, hasVendor, hasChest, hasStory, hasGather);
+    }
+
     printf("\n=== TEST 9: consecutive 429 -> escalating cooldown (observational) ===\n");
     {
         // Flash-first on purpose: two real attempts 31 s apart. While the daily Flash quota is
