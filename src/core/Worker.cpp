@@ -21,7 +21,8 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Reply in Turkish. Keep item/NPC/map names in English.\n"
     "- Prices in gold/silver/copper (g/s/c).\n"
     "- Summarize tool results concisely in Turkish. Never show raw JSON.\n"
-    "- Keep answers short.";
+    "- Keep answers short.\n"
+    "- Formatting: use **bold**, ### headers, - bullets, and `code` for chat codes. NEVER use markdown tables, images, or links.";
 
 static std::set<std::string> ExtractChatLinks(const std::string& text) {
     std::set<std::string> links;

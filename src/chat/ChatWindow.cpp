@@ -52,6 +52,9 @@ static const ImVec4 COL_BODY      = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
 static const ImVec4 COL_CHATLINK  = ImVec4(0.40f, 0.85f, 0.95f, 1.0f);
 static const ImVec4 COL_BOLD      = ImVec4(1.00f, 0.84f, 0.00f, 1.0f);
 static const ImVec4 COL_TOOL      = ImVec4(0.40f, 0.90f, 0.60f, 1.0f);
+static const ImVec4 COL_CODE      = ImVec4(0.80f, 0.84f, 0.90f, 1.0f);
+static const ImVec4 COL_HEADER    = ImVec4(0.96f, 0.86f, 0.45f, 1.0f);
+static const ImVec4 COL_MARKER    = ImVec4(0.75f, 0.70f, 0.50f, 1.0f);
 
 void ChatWindow::CopyToClipboard(const std::string& utf8) {
     if (!OpenClipboard(nullptr)) return;
@@ -70,107 +73,29 @@ void ChatWindow::CopyToClipboard(const std::string& utf8) {
     m_copiedAt = std::chrono::steady_clock::now();
 }
 
-struct RichToken {
-    enum Type { Plain, Bold, ChatLink, Newline };
-    Type type;
-    std::string text;
-    ImVec4 color;
-};
-
-static std::vector<RichToken> Tokenize(const std::string& text) {
-    std::vector<RichToken> tokens;
-    size_t pos = 0;
-    size_t len = text.size();
-    std::string accum;
-
-    auto flushAccum = [&](ImVec4 color, RichToken::Type type) {
-        if (accum.empty()) return;
-        size_t start = 0;
-        while (start < accum.size()) {
-            size_t nl = accum.find('\n', start);
-            if (nl == start) {
-                tokens.push_back({RichToken::Newline, "", {}});
-                start = nl + 1;
-            } else {
-                std::string chunk = (nl == std::string::npos)
-                    ? accum.substr(start) : accum.substr(start, nl - start);
-                size_t wstart = 0;
-                while (wstart < chunk.size()) {
-                    size_t sp = chunk.find(' ', wstart);
-                    std::string word;
-                    if (sp == std::string::npos) {
-                        word = chunk.substr(wstart);
-                        wstart = chunk.size();
-                    } else {
-                        word = chunk.substr(wstart, sp - wstart + 1);
-                        wstart = sp + 1;
-                    }
-                    if (!word.empty())
-                        tokens.push_back({type, word, color});
-                }
-                if (nl != std::string::npos) {
-                    tokens.push_back({RichToken::Newline, "", {}});
-                    start = nl + 1;
-                } else {
-                    break;
-                }
-            }
-        }
-        accum.clear();
-    };
-
-    while (pos < len) {
-        if (text[pos] == '[' && pos + 1 < len && text[pos + 1] == '&') {
-            flushAccum(COL_BODY, RichToken::Plain);
-            size_t end = text.find(']', pos);
-            if (end != std::string::npos) {
-                tokens.push_back({RichToken::ChatLink, text.substr(pos, end - pos + 1), COL_CHATLINK});
-                pos = end + 1;
-                continue;
-            }
-        }
-        if (pos + 1 < len && text[pos] == '*' && text[pos + 1] == '*') {
-            flushAccum(COL_BODY, RichToken::Plain);
-            size_t end = text.find("**", pos + 2);
-            if (end != std::string::npos) {
-                std::string bold = text.substr(pos + 2, end - pos - 2);
-                accum = bold;
-                flushAccum(COL_BOLD, RichToken::Bold);
-                pos = end + 2;
-                continue;
-            }
-        }
-        accum += text[pos];
-        pos++;
+static ImVec4 StyleColor(Markdown::Style s) {
+    switch (s) {
+        case Markdown::Style::Bold:       return COL_BOLD;
+        case Markdown::Style::InlineCode: return COL_CODE;
+        case Markdown::Style::ChatLink:   return COL_CHATLINK;
+        default:                          return COL_BODY;
     }
-    flushAccum(COL_BODY, RichToken::Plain);
-    return tokens;
 }
 
-void ChatWindow::RenderFormattedText(const std::string& text) {
-    auto tokens = Tokenize(text);
+void ChatWindow::RenderTokens(const std::vector<Markdown::Token>& tokens, float maxX,
+                              int& linkId, const ImVec4* overrideColor) {
     bool firstOnLine = true;
-    int linkId = 0;
-    float maxX = ImGui::GetContentRegionMax().x;
-
     for (auto& tok : tokens) {
-        if (tok.type == RichToken::Newline) {
-            ImGui::NewLine();
-            firstOnLine = true;
-            continue;
-        }
-
         ImVec2 sz = ImGui::CalcTextSize(tok.text.c_str());
-        if (tok.type == RichToken::ChatLink) sz.x += 8.0f;
+        if (tok.style == Markdown::Style::ChatLink) sz.x += 8.0f;
 
         if (!firstOnLine) {
             ImGui::SameLine(0, 0);
-            if (ImGui::GetCursorPosX() + sz.x > maxX) {
+            if (ImGui::GetCursorPosX() + sz.x > maxX)
                 ImGui::NewLine();
-            }
         }
 
-        if (tok.type == RichToken::ChatLink) {
+        if (tok.style == Markdown::Style::ChatLink) {
             ImGui::PushID(linkId++);
             ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.20f, 0.40f, 0.45f, 0.30f));
             ImGui::PushStyleColor(ImGuiCol_HeaderHovered,  ImVec4(0.25f, 0.50f, 0.55f, 0.50f));
@@ -186,9 +111,57 @@ void ChatWindow::RenderFormattedText(const std::string& text) {
                 ImGui::SetTooltip(justCopied ? "Kopyalandi!" : "Tikla: kopyala (oyun icine yapistir)");
             ImGui::PopID();
         } else {
-            ImGui::TextColored(tok.color, "%s", tok.text.c_str());
+            ImVec4 col = overrideColor ? *overrideColor : StyleColor(tok.style);
+            ImGui::TextColored(col, "%s", tok.text.c_str());
         }
         firstOnLine = false;
+    }
+}
+
+void ChatWindow::RenderFormattedText(const std::string& text) {
+    auto lines = Markdown::Parse(text);
+    int linkId = 0;
+    float maxX = ImGui::GetContentRegionMax().x;
+    float indentUnit = ImGui::CalcTextSize("    ").x;
+    float spaceW = ImGui::CalcTextSize(" ").x;
+    bool prevBlank = false;
+
+    for (auto& ln : lines) {
+        if (ln.kind == Markdown::LineKind::Blank) {
+            if (!prevBlank) ImGui::Spacing();
+            prevBlank = true;
+            continue;
+        }
+        prevBlank = false;
+
+        if (ln.kind == Markdown::LineKind::Rule) {
+            ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.93f, 0.91f, 0.67f, 0.25f));
+            ImGui::Separator();
+            ImGui::PopStyleColor();
+            continue;
+        }
+
+        float ind = indentUnit * ln.indent;
+        if (ind > 0) ImGui::Indent(ind);
+
+        if (ln.kind == Markdown::LineKind::Header) {
+            ImGui::Spacing();
+            RenderTokens(ln.tokens, maxX, linkId, &COL_HEADER);
+            ImGui::Spacing();
+        } else if (ln.kind == Markdown::LineKind::Bullet || ln.kind == Markdown::LineKind::Numbered) {
+            std::string marker = (ln.kind == Markdown::LineKind::Bullet) ? "-" : ln.marker;
+            ImGui::TextColored(COL_MARKER, "%s", marker.c_str());
+            float mw = ImGui::CalcTextSize(marker.c_str()).x + spaceW;
+            ImGui::Indent(mw);
+            ImGui::SameLine(0, spaceW);
+            if (ln.tokens.empty()) ImGui::NewLine();
+            else RenderTokens(ln.tokens, maxX, linkId, nullptr);
+            ImGui::Unindent(mw);
+        } else {
+            RenderTokens(ln.tokens, maxX, linkId, nullptr);
+        }
+
+        if (ind > 0) ImGui::Unindent(ind);
     }
 }
 
@@ -227,7 +200,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, COL_DIM);
         ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextWrapped("GW2 hakkinda bir soru sor...\n\nOrnek:\n- Dusk kac altin?\n- Deldrimor Steel Ingot tarifi nedir?\n- Miyani nerede?\n- Ascended armor nasil yapilir?");
+        ImGui::TextWrapped("GW2 hakkinda bir soru sor...\n\nOrnek:\n- Dusk kac altin?\n- Deldrimor Steel Ingot tarifi nedir?\n- Miyani nerede?\n- Roller Beetle nasil acilir?");
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
     }

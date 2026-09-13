@@ -169,6 +169,7 @@ std::string FunctionHandler::HandleMap(const json& args, const CancelCheck& canc
     if (name.empty()) return "{\"error\": \"name parameter required\"}";
 
     int mapId = ResolveMapId(name);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     if (mapId <= 0)
         return "{\"error\": \"Map not found: " + name + "\"}";
 

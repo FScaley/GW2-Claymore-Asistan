@@ -1,6 +1,7 @@
 #pragma once
 #include "../core/Worker.h"
 #include "../imgui/imgui.h"
+#include "Markdown.h"
 #include <string>
 #include <vector>
 #include <chrono>
@@ -11,6 +12,8 @@ public:
 
 private:
     void RenderFormattedText(const std::string& text);
+    void RenderTokens(const std::vector<Markdown::Token>& tokens, float maxX,
+                      int& linkId, const ImVec4* overrideColor);
     void CopyToClipboard(const std::string& utf8);
 
     char m_inputBuf[512] = "";
