@@ -100,7 +100,7 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 
 - No full markdown rendering (basic **bold** + [&chatlink] destegi var, imgui_markdown Faz 2'de)
 - No function calling (Gemini answers from its own knowledge — Faz 2 will add GW2 API tools)
-- Turkish chars (ğ, ş, ı, İ, Ğ, Ş) may render as `?` in ImGui default font atlas — test with "Font testi" line in Options. Fix: `Fonts_AddFromFile` with Latin Extended-A range (Faz 2).
+- Turkish chars (ğ, ş, ı, İ, Ğ, Ş): Fixed in v0.2.1. Segoe UI 16px with Latin Extended-A range (U+0100-U+017F) via `Fonts_AddFromFile`. Static `ImFontConfig` + `g_turkishRanges` (async atlas rebuild gerektirir). `PushFont/PopFont` in AddonRender + AddonOptions.
 - Addon unload may hang up to 45s if Gemini call is in-flight (WinHTTP sync can't be interrupted).
 - Google Search grounding disabled on free tier.
 

@@ -64,7 +64,7 @@ Detaylar: `faz0-rapor.md`
 **Bilinen limitler:**
 - Tam markdown render yok (sadece **bold** + [&chatlink] — imgui_markdown Faz 2'de)
 - Function calling yok (Gemini kendi bilgisiyle cevap verir)
-- Turkce ğ/ş/ı karakterleri ? olarak gorunebilir (font sorunu)
+- Turkce ğ/ş/ı karakterleri: v0.2.1'de duzeltildi (Segoe UI + Latin Extended-A)
 - Addon unload 45s'ye kadar bekleyebilir (in-flight Gemini cagrisi)
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
@@ -81,7 +81,7 @@ Detaylar: `faz0-rapor.md`
 - Waypoint chat_link (API'den dogrudan)
 - imgui_markdown (zengin metin render)
 - Per-call timeout + iptal butonu
-- Turkce font fix (Fonts_AddFromFile, Latin Extended-A glyph range)
+- ~~Turkce font fix~~ (v0.2.1'de tamamlandi)
 - Google Search grounding: ucretli key varsa tools ekle (model_tier == "paid" kontrolu)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
