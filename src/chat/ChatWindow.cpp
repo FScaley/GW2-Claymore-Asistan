@@ -191,10 +191,11 @@ void ChatWindow::RenderFormattedText(const std::string& text) {
     }
 }
 
-void ChatWindow::Render(Worker* worker, bool* pOpen) {
+void ChatWindow::Render(Worker* worker, bool* pOpen, ImFont* font) {
     if (!*pOpen) return;
 
     PushGW2Style();
+    if (font) ImGui::PushFont(font);
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(280, 220), ImVec2(800, 900));
 
@@ -324,5 +325,6 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
     }
 
     ImGui::End();
+    if (font) ImGui::PopFont();
     PopGW2Style();
 }
