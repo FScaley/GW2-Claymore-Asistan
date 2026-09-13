@@ -23,7 +23,7 @@ Detaylar: `faz0-rapor.md`
 **Onemli bulgular:**
 - Interactions API calisiyor, gemini-3.8-flash calisiyor
 - Key tier: FREE — Pro modeller limit 0
-- Rate limit: 20 RPM (free Flash)
+- Rate limit: 20 RPM (free Flash) — Faz 0 tespiti; 13 Eylul: `limit: 20` GUNLUK cikti (v0.3.10 notuna bak)
 - **Google Search grounding: FREE TIER'DA CALISMAZ** (kota 0)
   - Grounding yok iken 200, grounding var iken 429
   - Cozum: grounding kapatildi, Faz 2'de WikiClient + function calling ile wiki erisimi
@@ -53,7 +53,7 @@ Detaylar: `faz0-rapor.md`
 - Nexus auto-update: UP_GitHub + UpdateLink
 
 **v0.2.0 (13 Eylul 2026):**
-- Model zinciri: gemini-3.5-flash-lite (30 RPM) → gemini-3.5-flash (15 RPM) → gemini-3.8-flash (15 RPM)
+- Model zinciri: gemini-3.5-flash-lite (30 RPM) → gemini-3.5-flash (15 RPM) → gemini-3.8-flash (15 RPM) — o gunku varsayimlar; limitler RPM degil (v0.3.10 notu). Bu Lite-once zincir v0.3.0 kurulumlarinin config.json'unda kalici
 - Per-model cooldown: 429'da model sogutuluyor, sonraki deneniyor
 - Rate limit havuzlari model basina (test ile dogrulandi: Lite 200, 3.8-flash 429 ayni anda)
 - 429 tam hata mesaji Nexus loguna yazilir (APIDefs->Log thread-safe — mutex korumali, dogrulandi)
@@ -90,7 +90,7 @@ Detaylar: `faz0-rapor.md`
 - v0.3.5: System prompt dengeleme (genel sorular tool gerektirmesin), MAX_FC_ROUNDS 4→6
 
 **v0.3.6 (13 Eylul 2026) — Gozleme dayali kalite iyilestirmesi:**
-- Model zinciri: Flash birincil (20 RPM), Lite yedek (30 RPM). Lite halusinasyon orani kabul edilemez.
+- Model zinciri: Flash birincil (20 RPM), Lite yedek (30 RPM). Lite halusinasyon orani kabul edilemez. (20/30 RPM sanildi; 13 Eylul: Flash `limit: 20` GUNLUK — free key'de Flash gunde ~8-10 soru, gerisi Lite)
 - TEST 5: Worker ile Toxic Spider Queen waypoint testi — gercek kodlar dogrulandi
 - Wiki redirect otomatik takibi (#REDIRECT [[X]]) — 1 Gemini round tasarrufu
 - HandleWiki: | location = [[Map]] algilanirsa o map'in waypointleri otomatik eklenir
@@ -113,7 +113,7 @@ Detaylar: `faz0-rapor.md`
 - Tool icinde iptal: `FunctionHandler::Handle(call, CancelCheck shouldCancel)` (`CancelCheck = std::function<bool()>`). Worker `[this, gen]{ return !IsGenerationCurrent(gen); }` gecirir. HandleWiki her HTTP GET arasinda kontrol eder (search, wikitext, HTML, her alt koleksiyon, map lookup) ve `{"error": "cancelled by user"}` dondurur; HandleItemInfo/HandleRecipe ResolveItemId sonrasi kontrol eder. Eski "HandleWiki icinde iptal tepkisiz (~90s)" limiti kapandi — iptal artik tek GET icinde (≤10-25s) etkili
 - Worker: FC log satirina sonuc byte boyutu eklendi (`FC gw2_wiki {"query":"Roller Beetle"} -> (15731B) {"content":...`). System prompt'a COLLECTION RULE: mount/legendary/koleksiyon/achievement sorularinda her sub_collections girdisindeki her item aynen aktarilir; yalnizca verilen hint metni (cevrilerek) kullanilir, hafizadan konum/NPC/miktar eklenmez; eksik alt koleksiyon icin gw2_wiki tam adiyla cagrilir; kesilen bolumler icin `section` parametresi kullanilir
 - Yeni `src/test_wiki.cpp` → test_wiki.exe: SIFIR Gemini maliyeti (wiki + GW2 API). Kontroller: Beetle Saddle metninde CSS/JS sizintisi yok; Roller Beetle'da ≥3 bolum; gw2_wiki("Roller Beetle") gecerli JSON, sub_collections'ta Beetle Saddle (9 item), Beetle Feed (8), Beetle Juice (10) — "Inquest Beetle Notes" dahil; toplam <40KB (gercek 15.7KB); section=Unlocking calisiyor; iptal cancelled hatasi doner. Wiki yolundaki her degisiklik icin regresyon kapisi — ONCE bu calistirilir. Build: `cl /EHsc /std:c++17 /MT /I"../include" test_wiki.cpp core/HttpClient.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp /link winhttp.lib` (src/ icinden, VS Developer Command Prompt)
-- test_gemini TEST 6: Worker ile "Roller Beetle mount nasil acilir? Hangi koleksiyonlar ve hangi itemler lazim?" — gozlem: TEK gw2_wiki cagrisi, Gemini (Flash suite'in kendisi yuzunden cooldown'da oldugu icin Lite'ta) 3 koleksiyonu ve 27 item adini aynen listeledi. test_gemini build satirina core/WikiText.cpp eklendi. RPM maliyeti ~9 (Flash free tier 20 RPM — suite arka arkaya iki kez calistirilirsa 429 → Lite fallback; beklenen, zinciri test eder)
+- test_gemini TEST 6: Worker ile "Roller Beetle mount nasil acilir? Hangi koleksiyonlar ve hangi itemler lazim?" — gozlem: TEK gw2_wiki cagrisi, Gemini (Flash suite'in kendisi yuzunden cooldown'da oldugu icin Lite'ta) 3 koleksiyonu ve 27 item adini aynen listeledi. test_gemini build satirina core/WikiText.cpp eklendi. ~9 Gemini cagrisi (Flash'in gunluk 20 kotasinin yaklasik yarisi — ayni gun ikinci kosu Lite'ta; beklenen, zinciri test eder)
 - Kalan: bazi hint'ler Lite'ta hafizadan suslendi (wiki hint "Dabiji Hollows" derken model "Pogahn Bluffs" yazdi) — model davranisi, veri eksigi degil; prompt kurali ile azaltildi, Flash'ta daha iyi bekleniyor. Icerik butunlugu (item adlari/sayilari) deterministik
 - Bilinen limitler: alt koleksiyon fetch'leri seri, ~50KB HTML, cache yok (ayni mount iki kez = 4-5 tam fetch; yalnizca FC logunda tekrarlanan ayni gw2_wiki sorgusu gorulurse sayfa cache eklenir). ExtractTableRows mech1 tablosu icinde ic ice `<table>` desteklemiyor (gorulmedi). ExtractSubCollectionNames yalnizca iki sablonu taniyor — baska sablonla baglanan alt koleksiyonlar icin Gemini gw2_wiki'yi adiyla cagirmali. location→waypoints hala `| location = [[Map]]` formati gerektiriyor
 
@@ -139,7 +139,7 @@ Detaylar: `faz0-rapor.md`
 - WAYPOINT RULE yeniden yazildi: kod uretme; kod ALMAK icin gw2_map cagir; NPC gw2_wiki sonuclarindaki `locations[]`'tan kullanicinin sordugu haritayi sec; "kod uretilemez / haritadan arayin" ASLA deme
 - FC log satirina tool suresi (ms) eklendi — NPC aramalari 10-30 GET, olcum lazim
 - test_wiki F (Gorrik: Kourna girisi + Allied Encampment WP + npc_here=Thunderhead) ve G (Toxic Spider Queen: noktali virgullu alan listesi → Kessex Hills ≥10 WP) — once KIRMIZI gozlendi (map_name yok / Thunderhead 4 WP), fix sonrasi YESIL. Tani icin her alanin ayri `gw2_map` cozumu yazdirildi: Kourna 1288 dogru cozulmus ama 0 WP → API probe → floor 49
-- test_gemini TEST 7: Worker ile "kourna da gorrik nerede, en yakin waypoint?" — Lite `gw2_wiki` + ek `gw2_map("Domain of Kourna")`, cevapta gercek kod, strip yok, red yok. TEST 5'e `checks:` satiri eklendi. ~12 RPM
+- test_gemini TEST 7: Worker ile "kourna da gorrik nerede, en yakin waypoint?" — Lite `gw2_wiki` + ek `gw2_map("Domain of Kourna")`, cevapta gercek kod, strip yok, red yok. TEST 5'e `checks:` satiri eklendi. ~12 Gemini cagrisi
 - Bilinen limitler: NPC gw2_wiki en pahali tool (10-30 GET, 10-30 s worst case; waypoint fetch cache'siz), instance haritalarda 5 bos floor probe, `npc_here` tek koordinata dayanir (cok gorunumlu NPC'de editorun sectigi), test F canli wiki durumuna bagli, Lite gw2_map'i gereksiz tekrar cagirabiliyor, `{{Stub}}` uyarisi content basina siziyor (zararsiz), `items_index.json` diskte hic olusmamis (Save yalnizca AddonUnload'da — oyun cikisinda calismiyor; cache oturum bazli, dogruluk sorunu degil; istenirse Add sonrasi/periyodik Save)
 
 **v0.3.10 (13 Eylul 2026) — Wiki aramasi iki katmanli: baslik oneki + tam metin fallback:**
@@ -149,10 +149,13 @@ Detaylar: `faz0-rapor.md`
 - HandleWiki: tam metinden gelen sayfada `search_mode:"fulltext"` + `search_note`; bulunamadiginda `{error, hint}` — "arama baslik tabanli, tam tekil sayfa adiyla veya tek isimle tekrar dene". Tool `query` aciklamasi: tam tekil Ingilizce baslik, dolgu kelime yasak (Guild Wars 2, GW2, location, guide, farm)
 - COLLECTION RULE: "ipucu konumlari icin gw2_map cagirma" — bu surumun testinde Lite bir kosuda Roller Beetle ipuclarindaki 5 harita icin sirayla gw2_map cagirip 6 turu doldurdu (once gorulmemisti); cumle sonrasi tekrar tek gw2_wiki
 - GeminiClient: 400 govdesinde "retry" ("Model generated invalid JSON syntax … Please retry the request", tool'suz basit soruda gozlendi) → 500/503 gibi zincir fallback
-- Testler: test_wiki H once KIRMIZI (hits=0, 62B hata — logdaki `(62B)` ile ayni), fix sonrasi A–H yesil: "Janthir Syntri renown tokens" → Janthir Syntri Renown Token, item_id 102881, search_mode=fulltext; F'e "tam baslik yolunda search_mode yok" negatif kontrolu. Bilgi amacli: "Gorrik Kourna location"→Gorrik, "Dragonite Ore converter"→Bag of Dragonite Ore, "Leviathan farm End of Dragons"→yok. Test tarafi hatasi: `item_id` sayi, `value("item_id","-")` exception atti → `dump()`; stdout tamponsuz yapildi (crash satirlari yutmasin). test_gemini TEST 8 (Worker): Lite tam tekil basligi ilk cagrida kullandi, `writ=1 token=1 notfound=0`; TEST 5/6/7 yesil (3. kosu; 2. kosuda TEST 6 dustu → prompt cumlesi). ~14 RPM
-- Bilinen limitler: katman 2 anlam degil kelime ortusmesiyle secer ("Dragonite Ore converter" → Bag of Dragonite Ore, donusturucular `related`'da); ortusme yoksa dogru sayfa ("Leviathan") icin Gemini'nin tek isimle tekrar denemesi gerekir; ResolveItemId/ResolveMapId de katman 2'yi kullanir (cozulemeyen konumda +1 arama +≤3 sayfa); Quick Access ikon texture'i hic yuklenmiyor (`QA_CLAYMORE … 10 failed attempts`, kozmetik); Lite varyansi gercek — ayni prompt 2 kosuda tek cagri, 1 kosuda 6 tur; arkadas ayni Gemini key'ini kullaniyorsa (dogrulanmadi — testlerde Flash'in ilk cagrida 429 vermesinden cikarim) 20 RPM paylasilir → cogunlukla Lite, ikinci ucretsiz key herkese kendi Flash kotasini verir; gecici-400 fallback'i yalnizca `Ask()`'te, `SendFunctionResults` (pinned) hala "Istek hatasi" gosterir; `SearchWords` 3 harfli stopword'leri ("the","and") atmiyor — kapsama terimi gercek kelimeleri baskin kilar, logda gorulurse stopword listesi
+- Testler: test_wiki H once KIRMIZI (hits=0, 62B hata — logdaki `(62B)` ile ayni), fix sonrasi A–H yesil: "Janthir Syntri renown tokens" → Janthir Syntri Renown Token, item_id 102881, search_mode=fulltext; F'e "tam baslik yolunda search_mode yok" negatif kontrolu. Bilgi amacli: "Gorrik Kourna location"→Gorrik, "Dragonite Ore converter"→Bag of Dragonite Ore, "Leviathan farm End of Dragons"→yok. Test tarafi hatasi: `item_id` sayi, `value("item_id","-")` exception atti → `dump()`; stdout tamponsuz yapildi (crash satirlari yutmasin). test_gemini TEST 8 (Worker): Lite tam tekil basligi ilk cagrida kullandi, `writ=1 token=1 notfound=0`; TEST 5/6/7 yesil (3. kosu; 2. kosuda TEST 6 dustu → prompt cumlesi). ~14 Gemini cagrisi, ~6'si Flash denemesi
+- Bilinen limitler: katman 2 anlam degil kelime ortusmesiyle secer ("Dragonite Ore converter" → Bag of Dragonite Ore, donusturucular `related`'da); ortusme yoksa dogru sayfa ("Leviathan") icin Gemini'nin tek isimle tekrar denemesi gerekir; ResolveItemId/ResolveMapId de katman 2'yi kullanir (cozulemeyen konumda +1 arama +≤3 sayfa); Quick Access ikon texture'i hic yuklenmiyor (`QA_CLAYMORE … 10 failed attempts`, kozmetik); Lite varyansi gercek — ayni prompt 2 kosuda tek cagri, 1 kosuda 6 tur; **Flash free `limit: 20` = GUNLUK kota** (13 Eylul 20:57–20:59 probe: son testten 7+ dk sonra bos pencerede 3 Flash istegi 429, retry ipucu 24→37→52 s buyudu, 21:04'te 4. yoklama hala 429, Lite 200; 3.8-flash 20:57'de 429 ama 21:03'te 200 → onunki gecici, gunluk degil; govdede quotaId yok → cikarim, sabah ilk soruda model etiketi Flash ise kesinlesir) → gunde ~20 Flash cagrisi (~8–10 soru), gerisi Lite; test_gemini gunluk Flash kotasini yiyor → aksam test sonuclari Lite sonucudur; kota bitince her soru 1 bosa Flash 429 + ~1 s; arkadasin KENDI key'i var (dogrulandi) ama v0.3.0'da kurdugu icin config'inde Lite-once eski zincir kalici (Options UI yok) → hic Flash kullanmadi, logunda 429 yok; gecici-400 fallback'i yalnizca `Ask()`'te, `SendFunctionResults` (pinned) hala "Istek hatasi" gosterir; `SearchWords` 3 harfli stopword'leri ("the","and") atmiyor — kapsama terimi gercek kelimeleri baskin kilar, logda gorulurse stopword listesi
 
 **Faz 2 kalan (ertelenmis / kosullu):**
+- 429'da ustel cooldown (30 s → 2 dk → 10 dk → 30 dk, basarida sifirla) — gunluk Flash kotasi dolunca her soruda bosa Flash denemesi + ~1 s gecikmeyi keser; kullanici karari
+- Model zinciri stratejisi: free key'de Flash gunde ~20 cagri → ya Lite'i fiili birincil kabul edip prompt/tool sertlestirmeye devam (bugune kadarki yol), ya ucretli tier (Flash ~$0.01/soru mertebesi) — kullanici karari
+- `model_chain` icin Options UI yok — eski kurulumlarda (arkadas, v0.3.0) Lite-once zincir config.json'da kalici; elle duzenleme veya UI
 - Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
 - Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
@@ -210,8 +213,8 @@ Detaylar: `faz0-rapor.md`
 ## Gemini API Notlari
 
 - Endpoint: /v1beta/interactions (Interactions API)
-- Model zinciri (v0.3.6+): gemini-3.5-flash (birincil, 20 RPM) → gemini-3.5-flash-lite (yedek, 30 RPM) → gemini-3.8-flash. Config'deki model_chain korunur; varsayilan sadece yeni kurulumlar icin.
-- Free tier: 20 RPM, grounding kota 0, Pro limit 0
+- Model zinciri (v0.3.6+): gemini-3.5-flash (birincil — free key'de gunde ~20 cagri) → gemini-3.5-flash-lite (yedek, fiili is yuku) → gemini-3.8-flash. Config'deki model_chain korunur; varsayilan sadece yeni kurulumlar icin (v0.3.0 kurulumlari Lite-once zincirle kaldi; Options UI yok)
+- Free tier: Flash `limit: 20` GUNLUK (13 Eylul 2026 kaniti), Lite bugune kadar hic 429 vermedi, grounding kota 0, Pro limit 0. 429 govdesinde quotaId yok; "retry in Xs" ipucu gunluk kotada da kucuk — guvenilmez
 - Eski modeller (2.5): yeni kullanicilara kapali
 - Key format: AQ. prefix gecerli
 - Response parse: steps[].content[].text (type=="model_output")
