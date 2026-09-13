@@ -2,6 +2,7 @@
 #include "core/WikiText.h"
 #include "core/ItemIndex.h"
 #include "core/FunctionHandler.h"
+#include "core/ConfigManager.h"
 #include <cstdio>
 #include <json.hpp>
 
@@ -225,6 +226,56 @@ int main() {
         }
         auto none = gw2.WikiSearch("meta farm train Guild Wars 2 Secrets of the Obscure Janthir Wilds", 5);
         printf("  fallback [vague meta-farm query] -> %s\n", none.empty() ? "(none)" : none[0].title.c_str());
+    }
+
+    printf("\n=== I: HTTP failure visibility + API key hygiene ===\n");
+    {
+        // A user saw "Baglanti hatasi" with a Nexus log that held nothing but "loaded": HttpClient returned
+        // nullopt and threw the WinHTTP error code away. Probe (13 Sep 2026): an empty key -> 403 and a key with
+        // whitespace/quotes -> 400 both reach Google and get logged; a single non-ASCII byte in the header
+        // (NBSP copied from a web page, a Turkish letter) is rejected locally by WinHttpSendRequest with 87,
+        // in 0 ms, with no response - exactly that silent symptom. The code must now be visible and the key clean.
+        HttpClient http;
+        Check(!http.LastFailure().Any(), "fresh client has no recorded failure");
+
+        auto r = http.Get("nonexistent.invalid", "/", 5000);
+        printf("nonexistent.invalid -> %s\n", http.LastFailureText().c_str());
+        Check(!r.has_value(), "unresolvable host yields no response");
+        Check(http.LastFailure().stage == "WinHttpSendRequest" && http.LastFailure().code == 12007,
+              "failure recorded as WinHttpSendRequest 12007 (ERROR_WINHTTP_NAME_NOT_RESOLVED)");
+        Check(!HttpClient::DescribeError(12007).empty(), "DescribeError(12007) has Windows text");
+        Check(HttpClient::TurkishHint(12007).find("DNS") != std::string::npos, "TurkishHint(12007) mentions DNS");
+        Check(HttpClient::TurkishHint(87).find("anahtar") != std::string::npos, "TurkishHint(87) points at the API key");
+
+        auto bad = http.Post("generativelanguage.googleapis.com", "/v1beta/interactions", "{}",
+                             "x-goog-api-key: FAKE\xc3\xa7" "123\r\n", 5000);
+        printf("non-ASCII header byte -> %s\n", http.LastFailureText().c_str());
+        Check(!bad.has_value() && http.LastFailure().code == 87,
+              "non-ASCII byte in a header -> WinHttpSendRequest 87 (ERROR_INVALID_PARAMETER), no response");
+        Check(http.LastFailure().elapsedMs < 2000, "header rejection is local (no network round trip)");
+
+        auto ok = http.Get(GW2Client::API_HOST, "/v2/build", 10000);
+        Check(ok.has_value() && ok->statusCode == 200, "GW2 API /v2/build answers 200");
+        Check(!http.LastFailure().Any(), "a successful request clears the previous failure");
+
+        std::string diag = HttpClient::Diagnostics();
+        printf("Diagnostics: %s\n", diag.c_str());
+        Check(diag.find("Windows") != std::string::npos && diag.find("proxy") != std::string::npos,
+              "Diagnostics reports OS version and proxy configuration");
+
+        Check(ConfigManager::SanitizeApiKey("  FAKE123\r\n") == "FAKE123", "SanitizeApiKey trims ASCII whitespace");
+        Check(ConfigManager::SanitizeApiKey("\xc2\xa0" "FAKE123\xc2\xa0") == "FAKE123", "SanitizeApiKey trims NBSP");
+        Check(ConfigManager::SanitizeApiKey("\"FAKE123\"") == "FAKE123", "SanitizeApiKey strips wrapping quotes");
+        Check(ConfigManager::SanitizeApiKey("\xef\xbb\xbf" "FAKE123\xe2\x80\x8b") == "FAKE123",
+              "SanitizeApiKey strips BOM and zero-width space");
+        Check(ConfigManager::SanitizeApiKey("FAKE123") == "FAKE123", "SanitizeApiKey leaves a clean key alone");
+        Check(ConfigManager::ApiKeyProblem("FAKE123").empty(), "clean key reports no problem");
+        Check(ConfigManager::ApiKeyProblem("").empty(), "empty key is not a character problem (handled as 'missing')");
+        std::string problem = ConfigManager::ApiKeyProblem("FAKE\xc3\xa7" "123");
+        printf("problem text: %s\n", problem.c_str());
+        Check(!problem.empty() && problem.find("5.") != std::string::npos, "inner non-ASCII byte reported at position 5");
+        Check(!ConfigManager::ApiKeyProblem("FAKE 123").empty(), "inner space reported");
+        Check(problem.find("FAKE") == std::string::npos, "problem text never echoes the key");
     }
 
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);

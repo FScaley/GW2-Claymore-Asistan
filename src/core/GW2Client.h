@@ -2,6 +2,8 @@
 #include "HttpClient.h"
 #include <string>
 #include <vector>
+#include <optional>
+#include <functional>
 #include <json.hpp>
 
 struct GW2Item {
@@ -107,10 +109,16 @@ public:
     static constexpr const char* API_HOST = "api.guildwars2.com";
     static constexpr const char* WIKI_HOST = "wiki.guildwars2.com";
 
+    // Receives "[HTTP] host/path -> WinHttp... code" when a GET gets no response at all.
+    using LogFunc = std::function<void(const std::string&)>;
+    void SetLogger(LogFunc fn) { m_logger = std::move(fn); }
+
 private:
     std::string BuildIdList(const std::vector<int>& ids);
     std::string UrlEncode(const std::string& str);
     std::vector<WikiSearchResult> WikiFullTextSearch(const std::string& query, int limit);
+    std::optional<HttpResponse> Fetch(const char* host, const std::string& path, int timeoutMs = 10000);
 
     HttpClient m_http;
+    LogFunc m_logger;
 };

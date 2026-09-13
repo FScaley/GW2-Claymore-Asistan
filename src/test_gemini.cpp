@@ -34,6 +34,53 @@ int main(int argc, char** argv) {
         if (bad) { printf("FAIL: escalation math (%d)\n", bad); return 1; }
     }
 
+    printf("\n=== TEST -1b: Worker refuses a missing/unsendable API key before any HTTP (no network) ===\n");
+    {
+        // Field report: "Baglanti hatasi" with a Nexus log holding only "loaded". A non-ASCII byte in the
+        // key makes WinHTTP reject the header locally (87) - the request never leaves. The Worker must
+        // name the problem instead of sending, and no [HTTP]/[4xx] line may appear.
+        auto waitIdle = [](Worker& w) {
+            for (int i = 0; i < 100; ++i) {
+                auto s = w.GetChatSnapshot();
+                if (!s.busy && s.messages.size() >= 2) return s;
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            return w.GetChatSnapshot();
+        };
+        GW2Client gw2;
+        ItemIndex idx;
+        FunctionHandler fh(&gw2, &idx);
+        std::vector<std::string> logs;
+        auto logger = [&logs](const std::string& m) { logs.push_back(m); printf("  [LOG] %s\n", m.c_str()); };
+        int bad = 0;
+
+        ConfigManager noKey;                          // never Load()ed: empty key
+        Worker w1;
+        w1.Start(&noKey, &fh, logger);
+        w1.RequestChat("test");
+        auto s1 = waitIdle(w1);
+        w1.Stop();
+        std::string t1 = s1.messages.size() >= 2 ? s1.messages.back().text : "";
+        printf("  empty key -> %s\n", t1.c_str());
+        if (t1.find("girilmemis") == std::string::npos) { printf("  FAIL: empty key not caught\n"); bad++; }
+
+        ConfigManager badKey;
+        badKey.SetApiKey("FAKE\xc3\xa7" "123");         // inner non-ASCII byte: sanitizing must NOT hide it
+        Worker w2;
+        w2.Start(&badKey, &fh, logger);
+        w2.RequestChat("test");
+        auto s2 = waitIdle(w2);
+        w2.Stop();
+        std::string t2 = s2.messages.size() >= 2 ? s2.messages.back().text : "";
+        printf("  non-ASCII key -> %s\n", t2.c_str());
+        if (t2.find("5. karakteri") == std::string::npos) { printf("  FAIL: non-ASCII key not caught\n"); bad++; }
+        if (t2.find("FAKE") != std::string::npos) { printf("  FAIL: message echoes the key\n"); bad++; }
+        for (auto& l : logs)
+            if (l.rfind("[HTTP]", 0) == 0 || l.rfind("[4", 0) == 0) { printf("  FAIL: an HTTP attempt was made: %s\n", l.c_str()); bad++; }
+        if (bad) { printf("FAIL: key guard (%d)\n", bad); return 1; }
+        printf("  [OK] both keys refused locally, %zu log lines, none HTTP\n", logs.size());
+    }
+
     ConfigManager config;
     if (!config.Load("E:\\Guild Wars 2\\addons\\claymore-asistan\\config.json")) {
         printf("FAIL: config yuklenemedi\n");

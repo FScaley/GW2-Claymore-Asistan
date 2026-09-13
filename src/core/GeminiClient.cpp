@@ -151,7 +151,13 @@ GeminiResponse GeminiClient::DoRequest(const std::string& model,
     auto resp = m_http.Post(API_HOST, "/v1beta/interactions", jsonBody, headers);
 
     if (!resp.has_value()) {
-        result.error = "Baglanti hatasi";
+        // No HTTP response at all: DNS, TLS, firewall, proxy - or WinHTTP refusing our own header.
+        // The WinHTTP code is the only clue such a machine gives; put it in the log and the message.
+        const HttpFailure& f = m_http.LastFailure();
+        Log("[HTTP] " + model + ": " + m_http.LastFailureText());
+        std::string hint = HttpClient::TurkishHint(f.code);
+        if (hint.empty()) hint = HttpClient::DescribeError(f.code);
+        result.error = "Baglanti hatasi (kod " + std::to_string(f.code) + ")" + (hint.empty() ? "" : ": " + hint);
         return result;
     }
 

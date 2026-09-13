@@ -30,6 +30,18 @@ std::string GW2Client::UrlEncode(const std::string& str) {
     return result;
 }
 
+// Every GET goes through here so a transport failure (DNS, TLS, firewall - anything that yields
+// no HTTP response) reaches the Nexus log with its WinHTTP code instead of silently turning into
+// "not found". Non-200 statuses are the callers' business and stay quiet (404 is routine).
+std::optional<HttpResponse> GW2Client::Fetch(const char* host, const std::string& path, int timeoutMs) {
+    auto resp = m_http.Get(host, path, timeoutMs);
+    if (!resp && m_logger) {
+        std::string shown = path.size() > 120 ? path.substr(0, 120) + "..." : path;
+        m_logger("[HTTP] " + std::string(host) + shown + " -> " + m_http.LastFailureText());
+    }
+    return resp;
+}
+
 std::string GW2Client::FormatPrice(int copper) {
     if (copper <= 0) return "0c";
     int gold = copper / 10000;
@@ -71,7 +83,7 @@ std::vector<GW2Item> GW2Client::GetItems(const std::vector<int>& ids) {
     if (ids.empty()) return result;
 
     std::string path = "/v2/items?ids=" + BuildIdList(ids);
-    auto resp = m_http.Get(API_HOST, path);
+    auto resp = Fetch(API_HOST, path);
     if (!resp || resp->statusCode != 200) return result;
 
     try {
@@ -104,7 +116,7 @@ std::vector<GW2Price> GW2Client::GetPrices(const std::vector<int>& ids) {
     if (ids.empty()) return result;
 
     std::string path = "/v2/commerce/prices?ids=" + BuildIdList(ids);
-    auto resp = m_http.Get(API_HOST, path);
+    auto resp = Fetch(API_HOST, path);
     if (!resp || resp->statusCode != 200) return result;
 
     try {
@@ -131,7 +143,7 @@ std::vector<GW2Price> GW2Client::GetPrices(const std::vector<int>& ids) {
 
 GW2Recipe GW2Client::GetRecipe(int id) {
     std::string path = "/v2/recipes?ids=" + std::to_string(id);
-    auto resp = m_http.Get(API_HOST, path);
+    auto resp = Fetch(API_HOST, path);
     if (!resp || resp->statusCode != 200) return {};
 
     try {
@@ -167,7 +179,7 @@ GW2Recipe GW2Client::GetRecipe(int id) {
 
 GW2MapInfo GW2Client::GetMap(int id) {
     std::string path = "/v2/maps?ids=" + std::to_string(id);
-    auto resp = m_http.Get(API_HOST, path);
+    auto resp = Fetch(API_HOST, path);
     if (!resp || resp->statusCode != 200) return {};
 
     try {
@@ -219,7 +231,7 @@ GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
                          + "/floors/" + std::to_string(floor)
                          + "/regions/" + std::to_string(mapInfo.regionId)
                          + "/maps/" + std::to_string(mapId);
-        auto resp = m_http.Get(API_HOST, path);
+        auto resp = Fetch(API_HOST, path);
         if (!resp || resp->statusCode != 200) continue;
 
         try {
@@ -256,7 +268,7 @@ GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
 std::vector<int> GW2Client::SearchRecipesByOutput(int outputItemId) {
     std::vector<int> result;
     std::string path = "/v2/recipes/search?output=" + std::to_string(outputItemId);
-    auto resp = m_http.Get(API_HOST, path);
+    auto resp = Fetch(API_HOST, path);
     if (!resp || resp->statusCode != 200) return result;
 
     try {
@@ -321,7 +333,7 @@ std::vector<WikiSearchResult> GW2Client::WikiSearch(const std::string& query, in
     std::vector<WikiSearchResult> result;
     std::string path = "/api.php?action=opensearch&search=" + UrlEncode(query)
                      + "&limit=" + std::to_string(limit) + "&format=json";
-    auto resp = m_http.Get(WIKI_HOST, path);
+    auto resp = Fetch(WIKI_HOST, path);
     if (!resp || resp->statusCode != 200) return result;
 
     try {
@@ -347,7 +359,7 @@ std::vector<WikiSearchResult> GW2Client::WikiFullTextSearch(const std::string& q
 
     std::string path = "/api.php?action=query&list=search&srsearch=" + UrlEncode(query)
                      + "&srlimit=5&srnamespace=0&format=json";
-    auto resp = m_http.Get(WIKI_HOST, path);
+    auto resp = Fetch(WIKI_HOST, path);
     if (!resp || resp->statusCode != 200) return result;
 
     struct Scored { WikiSearchResult r; double score; };
@@ -383,7 +395,7 @@ std::vector<WikiSearchResult> GW2Client::WikiFullTextSearch(const std::string& q
 WikiPage GW2Client::WikiGetPage(const std::string& title) {
     std::string path = "/api.php?action=parse&page=" + UrlEncode(title)
                      + "&prop=wikitext&format=json";
-    auto resp = m_http.Get(WIKI_HOST, path);
+    auto resp = Fetch(WIKI_HOST, path);
     if (!resp || resp->statusCode != 200) return {};
 
     try {
@@ -402,7 +414,7 @@ WikiPage GW2Client::WikiGetPage(const std::string& title) {
 WikiPage GW2Client::WikiGetPageHtml(const std::string& title) {
     std::string path = "/api.php?action=parse&page=" + UrlEncode(title)
                      + "&prop=text&disabletoc=1&disableeditsection=1&format=json";
-    auto resp = m_http.Get(WIKI_HOST, path, 25000);
+    auto resp = Fetch(WIKI_HOST, path, 25000);
     if (!resp || resp->statusCode != 200) return {};
 
     try {

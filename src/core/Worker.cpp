@@ -67,6 +67,12 @@ void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
     m_gemini.SetModelChain(config->GetModelChain());
     if (logger) m_gemini.SetLogger(logger);
 
+    // Decided here, before the thread exists: DoChat must never read the ConfigManager, which the
+    // render thread edits (Kaydet writes the key before it stops this worker).
+    m_keyProblem = config->GetApiKey().empty()
+        ? "API anahtari girilmemis. Nexus menusu (CTRL+O) > Options > Claymore Asistan > Gemini API Key > Kaydet."
+        : ConfigManager::ApiKeyProblem(config->GetApiKey());
+
     m_stop = false;
     m_chatRequested = false;
     m_generation = 0;
@@ -154,6 +160,19 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.fallbackUsed = false;
         m_snapshot.toolStatus.clear();
         m_snapshot.generation = gen;
+    }
+
+    // A missing or unsendable key must not become a mystery. An empty key comes back as a 403;
+    // a key with a non-ASCII byte (NBSP copied from a web page, a Turkish letter) is rejected by
+    // WinHTTP itself with error 87 and no response - seen in the field as a bare "Baglanti hatasi"
+    // over an empty log. Say what is wrong and send nothing.
+    if (!m_keyProblem.empty()) {
+        if (auto logger = m_gemini.GetLogger()) logger("API anahtari sorunu: " + m_keyProblem);
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        m_snapshot.busy = false;
+        m_snapshot.messages.push_back({ChatMessage::System, m_keyProblem});
+        m_snapshot.error = m_keyProblem;
+        return;
     }
 
     auto tools = FunctionHandler::GetToolDefinitions();
