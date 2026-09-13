@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9 bugfix)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.10 bugfix)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -142,7 +142,19 @@ Detaylar: `faz0-rapor.md`
 - test_gemini TEST 7: Worker ile "kourna da gorrik nerede, en yakin waypoint?" — Lite `gw2_wiki` + ek `gw2_map("Domain of Kourna")`, cevapta gercek kod, strip yok, red yok. TEST 5'e `checks:` satiri eklendi. ~12 RPM
 - Bilinen limitler: NPC gw2_wiki en pahali tool (10-30 GET, 10-30 s worst case; waypoint fetch cache'siz), instance haritalarda 5 bos floor probe, `npc_here` tek koordinata dayanir (cok gorunumlu NPC'de editorun sectigi), test F canli wiki durumuna bagli, Lite gw2_map'i gereksiz tekrar cagirabiliyor, `{{Stub}}` uyarisi content basina siziyor (zararsiz), `items_index.json` diskte hic olusmamis (Save yalnizca AddonUnload'da — oyun cikisinda calismiyor; cache oturum bazli, dogruluk sorunu degil; istenirse Add sonrasi/periyodik Save)
 
+**v0.3.10 (13 Eylul 2026) — Wiki aramasi iki katmanli: baslik oneki + tam metin fallback:**
+- Kaynak: kullanicinin arkadasinin Nexus logu (addon GitHub release'lerinden otomatik guncelleniyor — 0.3.0→0.3.9 ayni gun). "Janthir Syntri Renown Tokens" → `No wiki results`, ardindan 5 tur daha kelime ekleme (renown hearts, map currency, vendor…) hepsi bos → 6 tur limiti → "bilgi bulunamadi". Ayni desen 3 soruda; v0.3.6 logunda da `Leviathan farm End of Dragons`, `Gorrik Kourna location`, `Vanguard title Guild Wars 2`
+- Kok neden (API probe ile dogrulandi): `action=opensearch` yalnizca **baslik oneki** eslestirir — sayfa "Janthir Syntri Renown Token" (tekil), sorgu cogul → bos. `list=search` (tam metin) ayni sorguda ilk sonuc dogru sayfa. `srwhat=title`/`nearmatch` cogul/ek kelimeli sorgularda da bos — tek ise yarayan `text`
+- `WikiSearch`: katman 1 opensearch; **yalnizca 0 sonucta** katman 2 `list=search` (5 sonuc, ns 0) → sorgu kelimeleriyle ortusme skoru (kucuk harf alfanumerik ≥3 karakter, `gw2/guild/wars/wiki` dolgu atilir, onek toleransli `tokens`↔`token`; skor = ortak kelime + baslik kapsama orani → "Renown Heart" beraberlikte "Shard of Janthir Syntri"i gecer), ortusmeyen basliklar atilir (tahmin ≠ eslesme → durust bulunamadi), en fazla 3, `fulltext=true`. HTTP hatasinda katman 2'ye girilmez
+- HandleWiki: tam metinden gelen sayfada `search_mode:"fulltext"` + `search_note`; bulunamadiginda `{error, hint}` — "arama baslik tabanli, tam tekil sayfa adiyla veya tek isimle tekrar dene". Tool `query` aciklamasi: tam tekil Ingilizce baslik, dolgu kelime yasak (Guild Wars 2, GW2, location, guide, farm)
+- COLLECTION RULE: "ipucu konumlari icin gw2_map cagirma" — bu surumun testinde Lite bir kosuda Roller Beetle ipuclarindaki 5 harita icin sirayla gw2_map cagirip 6 turu doldurdu (once gorulmemisti); cumle sonrasi tekrar tek gw2_wiki
+- GeminiClient: 400 govdesinde "retry" ("Model generated invalid JSON syntax … Please retry the request", tool'suz basit soruda gozlendi) → 500/503 gibi zincir fallback
+- Testler: test_wiki H once KIRMIZI (hits=0, 62B hata — logdaki `(62B)` ile ayni), fix sonrasi A–H yesil: "Janthir Syntri renown tokens" → Janthir Syntri Renown Token, item_id 102881, search_mode=fulltext; F'e "tam baslik yolunda search_mode yok" negatif kontrolu. Bilgi amacli: "Gorrik Kourna location"→Gorrik, "Dragonite Ore converter"→Bag of Dragonite Ore, "Leviathan farm End of Dragons"→yok. Test tarafi hatasi: `item_id` sayi, `value("item_id","-")` exception atti → `dump()`; stdout tamponsuz yapildi (crash satirlari yutmasin). test_gemini TEST 8 (Worker): Lite tam tekil basligi ilk cagrida kullandi, `writ=1 token=1 notfound=0`; TEST 5/6/7 yesil (3. kosu; 2. kosuda TEST 6 dustu → prompt cumlesi). ~14 RPM
+- Bilinen limitler: katman 2 anlam degil kelime ortusmesiyle secer ("Dragonite Ore converter" → Bag of Dragonite Ore, donusturucular `related`'da); ortusme yoksa dogru sayfa ("Leviathan") icin Gemini'nin tek isimle tekrar denemesi gerekir; ResolveItemId/ResolveMapId de katman 2'yi kullanir (cozulemeyen konumda +1 arama +≤3 sayfa); Quick Access ikon texture'i hic yuklenmiyor (`QA_CLAYMORE … 10 failed attempts`, kozmetik); Lite varyansi gercek — ayni prompt 2 kosuda tek cagri, 1 kosuda 6 tur; arkadas ayni Gemini key'ini kullaniyorsa (dogrulanmadi — testlerde Flash'in ilk cagrida 429 vermesinden cikarim) 20 RPM paylasilir → cogunlukla Lite, ikinci ucretsiz key herkese kendi Flash kotasini verir; gecici-400 fallback'i yalnizca `Ask()`'te, `SendFunctionResults` (pinned) hala "Istek hatasi" gosterir; `SearchWords` 3 harfli stopword'leri ("the","and") atmiyor — kapsama terimi gercek kelimeleri baskin kilar, logda gorulurse stopword listesi
+
 **Faz 2 kalan (ertelenmis / kosullu):**
+- Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
+- Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
 - Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
 - ~~imgui_markdown~~ (v0.3.8'de markdown-lite renderer ile kapatildi — imgui_markdown reddedildi, yukariya bak)
 - Baslik icin ikinci (buyuk) font — istenirse ayri release (Nexus Fonts_AddFromFile + atlas rebuild null race)
