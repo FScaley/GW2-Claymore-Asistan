@@ -100,11 +100,10 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 
 - No full markdown rendering (basic **bold** + [&chatlink] destegi var, imgui_markdown Faz 2'de)
 - No function calling (Gemini answers from its own knowledge — Faz 2 will add GW2 API tools)
-- Turkish chars (ğ, ş, ı, İ, Ğ, Ş): `Fonts_AddFromFile` ile Segoe UI 16px, `aConfig=nullptr` (Nexus kendi default ImFontConfig'ini oluşturur). Nexus zaten Latin Extended-A range ekliyor. `Fonts_Release` unload'da ilk sırada. Options'ta çalışıyor, chat'te henüz doğrulanmadı. Pattern: alter_ego, TyrianCodex ile aynı.
+- Turkish chars (ğ, ş, ı, İ, Ğ, Ş): `Fonts_AddFromFile` ile Segoe UI 16px, `aConfig=nullptr`. Options + Gemini cevaplari dogru gorunuyor. Chat input'ta Turkce karakter yazmak ImGui/Nexus WM_CHAR handling sorunu — bizim kontrolumuz disinda, tum addon'larda ayni. `Fonts_Release` unload'da ilk sirada. Pattern: alter_ego, TyrianCodex.
 - Addon unload may hang up to 45s if Gemini call is in-flight (WinHTTP sync can't be interrupted).
 - Google Search grounding disabled on free tier.
-- v0.2.2-v0.2.5 crash'leri: tespit edilemedi — Nexus hot-reload + ArcDPS ile korelasyon. Tam yeniden başlatma ile oluşmuyor. "Check for updates" yerine oyunu kapatıp açmak gerekiyor.
-- APIDefs->Log thread-safe (mutex korumalı, Nexus source'ta doğrulandı). Worker thread'den güvenle çağrılabilir.
+- v0.2.2-v0.2.5 crash'leri: tespit edilemedi — Nexus hot-reload + ArcDPS ile korelasyon. Tam yeniden baslatma ile olusmuyor. "Check for updates" yerine oyunu kapatip acmak gerekiyor.
 
 ### Data Files (addon directory, gitignored)
 

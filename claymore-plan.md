@@ -64,7 +64,7 @@ Detaylar: `faz0-rapor.md`
 **Bilinen limitler:**
 - Tam markdown render yok (sadece **bold** + [&chatlink] — imgui_markdown Faz 2'de)
 - Function calling yok (Gemini kendi bilgisiyle cevap verir)
-- Turkce font: v0.2.7 Segoe UI + nullptr config (Nexus pattern). Options'ta calisiyor, chat'te henuz dogrulanmadi
+- Turkce font: v0.2.8 Segoe UI + nullptr config (Nexus pattern). Options + cevap metni calisiyor. Input'ta Turkce karakter ImGui/Nexus sorunu (kontrol disinda)
 - v0.2.2-v0.2.5 crash: Nexus hot-reload + ArcDPS korelasyonu. Tam restart ile olmuyor
 - Addon unload 45s'ye kadar bekleyebilir (in-flight Gemini cagrisi)
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
@@ -82,7 +82,7 @@ Detaylar: `faz0-rapor.md`
 - Waypoint chat_link (API'den dogrudan)
 - imgui_markdown (zengin metin render)
 - Per-call timeout + iptal butonu
-- Turkce font fix: v0.2.7'de nullptr config ile yukleniyor, chat'te dogrulama bekliyor
+- ~~Turkce font fix~~ (v0.2.8'de tamamlandi — Options + cevap calisiyor, input ImGui/Nexus siniri)
 - Google Search grounding: ucretli key varsa tools ekle (model_tier == "paid" kontrolu)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
