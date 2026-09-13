@@ -72,21 +72,37 @@ Detaylar: `faz0-rapor.md`
 
 ### Faz 2: Akilli Veri Entegrasyonu — DEVAM EDIYOR
 
-**v0.3.0 (13 Eylul 2026) — Tamamlandi:**
+**v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
 - ItemIndex — lazy item isim→ID cache (items_index.json), wiki lookups ile doldurulur
 - FunctionHandler — Gemini function_call → API cagri → function_result dongusu
-- 3 tool (birlestirilmis): gw2_item_info (item+fiyat tek seferde), gw2_recipe (tarif+malzeme+maliyet+kar), gw2_wiki (wiki arama+icerik)
+- 3 tool (birlestirilmis): gw2_item_info, gw2_recipe, gw2_wiki
 - Fiyat formatlama (copper → Xg Ys Zc)
-- Gemini function calling loop: Ask(tools) → requires_action → FunctionHandler → SendFunctionResults → final response. Max 4 round.
+- Gemini function calling loop: Ask(tools) → requires_action → FunctionHandler → SendFunctionResults
 - FC 429 handling: pinned model retry (≤12s), else cooldown + chain fallback restart
-- Iptal butonu (generation bump ile), Temizle butonu (sohbet gecmisi silme)
-- Tool status gosterimi (yesil, "Araniyor: gw2_item_info...")
+- Iptal butonu, Temizle butonu, tool status gosterimi
 
-**Faz 2 kalan (v0.3.1+):**
-- gw2_map tool — /v2/maps, waypoint chat_link
+**v0.3.1–v0.3.5 (13 Eylul 2026) — Hotfix dizisi:**
+- v0.3.1: Waypoint hallucination fix (system prompt'a talimat — yetersiz kaldi)
+- v0.3.2: Tool dongusu limiti asildiginda tool'suz tekrar sorma (HATA: hallucination kaynagi oldu — v0.3.4'te kaldirdik)
+- v0.3.3: gw2_map tool eklendi — /v2/continents API'den gercek waypoint chat_link kodlari
+- v0.3.4: Anti-hallucination: chat link provenance check (StripUnverifiedChatLinks), Ingilizce system prompt, tool'suz fallback kaldirildi
+- v0.3.5: System prompt dengeleme (genel sorular tool gerektirmesin), MAX_FC_ROUNDS 4→6
+
+**v0.3.6 (13 Eylul 2026) — Gozleme dayali kalite iyilestirmesi:**
+- Model zinciri: Flash birincil (20 RPM), Lite yedek (30 RPM). Lite halusinasyon orani kabul edilemez.
+- TEST 5: Worker ile Toxic Spider Queen waypoint testi — gercek kodlar dogrulandi
+- Wiki redirect otomatik takibi (#REDIRECT [[X]]) — 1 Gemini round tasarrufu
+- HandleWiki: | location = [[Map]] algilanirsa o map'in waypointleri otomatik eklenir
+- ResolveMapId cache ("map:" prefix ile items_index.json)
+- Wiki TruncateWikitext: section-based (Location, Acquisition, Walkthrough, Contents, Notes)
+- FC log: her tool cagrisi loglanir (name, args, result preview)
+- fallbackUsed: ilk Ask()'tan tasinir, FC loop icinde kaybolmaz
+
+**Faz 2 kalan:**
 - imgui_markdown — zengin metin render (ayri release: font handling + link callback riski)
-- ~~Turkce font fix~~ (v0.2.8'de tamamlandi — Options + cevap calisiyor, input ImGui/Nexus siniri)
+- ~~gw2_map tool~~ (v0.3.3'te tamamlandi)
+- ~~Turkce font fix~~ (v0.2.8'de tamamlandi)
 - Google Search grounding: ucretli key varsa tools ekle (ertelendi — free tier'da test edilemez)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
