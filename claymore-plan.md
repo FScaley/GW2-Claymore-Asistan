@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9 bugfix)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -128,7 +128,22 @@ Detaylar: `faz0-rapor.md`
 - Dogrulama durumu: parser offline dogrulandi; yerlesim (indent/sarma/bosluk) oyun ici bakis gerektirir — ImGui disarida render edilemez
 - Bilinen limitler: tablo/resim/link/italik yok; baslik yalnizca renk+bosluk; ic ice indent kaynaktan genis (kozmetik); satir basi `N. ` duz metin numarali sayilir; backtick icinde `**` kod span'ini bozar (Gemini uretmez)
 
+**v0.3.9 (13 Eylul 2026) — NPC konum → waypoint: alan→harita cozumu + API floor bugu:**
+- Rapor: "kourna da gorrik nerede" → Lite "Oyun ici [&...] kodlari dogrudan uretilemediginden haritanizdan aratin" dedi. Kessex Hills eskiden calisiyordu; Domain of Kourna HIC calismamisti — uc bagimsiz sebep:
+  1. **API floor bugu (gorunmezdi):** `/v2/maps/1288` `default_floor=1` diyor ama floor 1/3/2/0 → 404; POI'ler yalnizca floor 49'da (Apizmic Grounds WP, Allied Encampment WP). v0.3.8 `/floors/1/` sabit kodluydu → Kourna icin kusursuz bir `gw2_map` cagrisi bile 0 waypoint donduruyordu. Fix: `GetMap` `default_floor`+`floors[]` okur; `GetMapWithWaypoints` default'tan baslayip her floor'u dener, waypoint veren ilk floor kazanir (`floorUsed`). Thunderhead Peaks 4 WP, Kessex Hills 16 WP — her floor'da ayni (dogrulandi)
+  2. **NPC infobox formati:** `| location = Thaumanova Reactor Fractal; Allied Encampment; Sun's Refuge; ...` — duz metin ALAN adlari, noktali virgullu, asla `[[Harita]]` linki. v0.3.7'nin `[[...]]` tetikleyicisi NPC sayfalarinda hic ateslenemezdi. Alan sayfasi (`{{Location infobox | type = area | within = Domain of Kourna | sector id = 1647}}`) haritayi `within` ile verir
+  3. **Prompt kacisi:** v0.3.4 WAYPOINT RULE "kod yoksa mevcut degil de" — Lite bunu gw2_map cagirmamak icin kullandi
+- `ResolveMapId(name, depth)` birlesik cozucu: arama → redirect → Location infobox (lead) → `| id` **yalnizca lead'de** (eski tum-sayfa aramasi alan sayfasindaki vendor tablosundan ITEM id'sini harita id'si sanabilirdi) → yoksa `| within` takibi (derinlik ≤2). Her adim `map:` cache. `gw2_map("Allied Encampment")` de calisir
+- HandleWiki: `location_areas` (cap 4; `<br>`/sablon temizlenir), `locations[]` (harita basina 1 giris, cap 3: map_name, map_id, areas, npc_here, waypoints[]; waypoint'siz haritalar (instance/fractal) atilir), `npc_here` = NPC `| coordinates` haritanin `continent_rect` icinde → o girisin waypoint'leri en yakin ilk (`nearest: true`; sayisal mesafe YOK — Lite birim uydurur), npc_here girisler once; `map_name`/`nearby_waypoints` = `locations[0]` aynasi; `other_locations` = cozulemeyen/cap disi alanlar
+- Gorrik sonucu: Thunderhead Peaks (npc_here, Observation Deck WP en yakin) + Fractals of the Mists + Domain of Kourna (2 WP) — 14.2KB. Wiki koordinati Thunderhead'i gosteriyor (ep5 Pact Command); Kourna sorusu icin Gemini `locations[]`'tan secer
+- WAYPOINT RULE yeniden yazildi: kod uretme; kod ALMAK icin gw2_map cagir; NPC gw2_wiki sonuclarindaki `locations[]`'tan kullanicinin sordugu haritayi sec; "kod uretilemez / haritadan arayin" ASLA deme
+- FC log satirina tool suresi (ms) eklendi — NPC aramalari 10-30 GET, olcum lazim
+- test_wiki F (Gorrik: Kourna girisi + Allied Encampment WP + npc_here=Thunderhead) ve G (Toxic Spider Queen: noktali virgullu alan listesi → Kessex Hills ≥10 WP) — once KIRMIZI gozlendi (map_name yok / Thunderhead 4 WP), fix sonrasi YESIL. Tani icin her alanin ayri `gw2_map` cozumu yazdirildi: Kourna 1288 dogru cozulmus ama 0 WP → API probe → floor 49
+- test_gemini TEST 7: Worker ile "kourna da gorrik nerede, en yakin waypoint?" — Lite `gw2_wiki` + ek `gw2_map("Domain of Kourna")`, cevapta gercek kod, strip yok, red yok. TEST 5'e `checks:` satiri eklendi. ~12 RPM
+- Bilinen limitler: NPC gw2_wiki en pahali tool (10-30 GET, 10-30 s worst case; waypoint fetch cache'siz), instance haritalarda 5 bos floor probe, `npc_here` tek koordinata dayanir (cok gorunumlu NPC'de editorun sectigi), test F canli wiki durumuna bagli, Lite gw2_map'i gereksiz tekrar cagirabiliyor, `{{Stub}}` uyarisi content basina siziyor (zararsiz)
+
 **Faz 2 kalan (ertelenmis / kosullu):**
+- Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
 - ~~imgui_markdown~~ (v0.3.8'de markdown-lite renderer ile kapatildi — imgui_markdown reddedildi, yukariya bak)
 - Baslik icin ikinci (buyuk) font — istenirse ayri release (Nexus Fonts_AddFromFile + atlas rebuild null race)
 - ~~gw2_map tool~~ (v0.3.3'te tamamlandi)
