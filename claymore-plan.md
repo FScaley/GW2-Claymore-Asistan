@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.13 bugfix)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.14 bugfix/prompt)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -176,8 +176,23 @@ Detaylar: `faz0-rapor.md`
 - Testler: test_wiki J once KIRMIZI (TimeoutsFor/IPv6FastFallback yok), sonra A–J yesil (Diagnostics: "... | IPv6 hizli geri donus: acik"); test_gemini -1/-1b/0–9 Lite yesil (TEST 9 canli: 30 s → 192 s). Durust sinir: gelistirme makinesinde IPv6 yok (`curl -6` "Could not resolve host") → duzeltmenin etkisi burada gozlemlenemez; dogrulama etkilenen kullanicinin guncelleme sonrasi ilk sorusu + logda "acik"
 - Kalan belirsizlik: kullanicinin `curl -6` satirinin tam metni ("(28) timed out" = olu yol, duzeltme kapsar; "Could not resolve host" = IPv6 hic yok, sebep baska) ve `[HTTP]` satiri (asama + ms) aynen alinmadi — istendi. Hala 12002 ise process-ici supheliler: oyun trafigini tunelleyen ping dusurucu (ExitLag/WTFast/NoPing — curl oyun process'i disinda calisir, onu gormez), guvenlik duvarinda Gw2-64.exe kurali
 - Kullanici tarafi kalici cozum: adaptorde IPv6'yi kapatmak (geri alinabilir) veya router IPv6 ayari — ayni olu yol IPv6 kullanan diger programlari da yavaslatir
+- SAHA RAPORU KAPANDI (13 Eylul 2026): kullanici IPv6'yi adaptorden kapatti, "ipv6 kapatinca cozuldu" — WinHTTP fast fallback o makinede ise yaramadi (12002, 19245 ms)
+
+**v0.3.14 (14 Eylul 2026) — COMPLETENESS + CONTRADICTION prompt kurallari:**
+- Saha bulgusu: Gharr Leadclaw sohbetinde model 7+ konumdan sadece birini (Wizard's Tower) soyledi, mastery kosulunu belirtmedi; kullanici "burada yok" deyince wiki yerine uydurma aciklama yapti ("meta durumuna gore gorunmeyebiliyor"). Nexus log analizi (FC satirlari): gw2_wiki cagirilmis, Dragon's Stand da dahil dogru veri donmus — sorun modelin sunumunda, veride degil
+- Wiki veri probe (probe_gharr.cpp, 0 Gemini): gw2_wiki("Gharr Leadclaw") → locations[] yalnizca 3/7 harita (infobox | location alani eksik); ama content'teki Locations bolumu 7 haritanin tamamini kosullariyla iceriyor. gw2_wiki("Gharr Leadclaw/Dragon's Stand Exchanges") → gercek exchange verisi (achievement gerektirmeyen Bulk Exchanges)
+- System prompt COMPLETENESS RULE: wiki sonucu birden fazla secenek listeliyorsa HEPSINI ve her birinin kosulunu (mastery/achievement/story) wiki'nin soyledigi sekilde sun; kosullu secenegi kosulsuz gosterme; yapisal alanlar eksik olabilir, content'teki bolum metni asil kaynak
+- System prompt CONTRADICTION RULE: kullanici "yok/yanlis" derse gw2_wiki'yi tam isimle tekrar cagir, sabit sablonla cevapla ("Wiki'ye gore <NPC> <harita>, <bolge> bolgesinde… Wiki bu konum icin sart listelemiyor / su sarti listeliyor: …"); wiki'nin soylemedigi aciklama ekleme (meta event, guncelleme, asama)
+- "Keep answers short" → "no filler, but never drop a location, condition or requirement the wiki lists"
+- gw2_wiki tool description'a: "locations is derived from the infobox and may be incomplete; the full list with conditions is in the Locations section in content"
+- Testler: TEST 10 (Gharr 2-turn Lite, checks: turn1 locations=6 wayfinder=1 dragons_stand=1; turn2 fc_wiki pact_base halluc=0); TEST 11 (Auric Dust 1-turn Lite, checks: sources=4 vendor chest story gather). A–J + -1/-1b/0–11 yesil. Durustluk: turn 2 sablonu 4 kosunun 2'sinde takip edildi, Lite %100 guvenilir degil; fc_wiki_main tum kosuslarda 0 (model ana sayfayi tekrar cagirmiyor, turn 1 baglamini kullaniyor)
+- Bilinen: (1) COMPLETENESS vs COLLECTION catismasi — Lite collection itemlerine hafizadan detay ekliyor (Milin, 50 Inscribed Shard; hint yalnizca "heket" diyor); v0.3.14 oncesi de vardi. (2) verifiedLinks DoChat basina sifirlanir — turn 2 turn 1'in gecerli kodlarini soyar ([&BC4EAAA=] → [kod dogrulanamadi]); onceden var, UX hatasi
 
 **Faz 2 kalan (ertelenmis / kosullu):**
+- Locations section → locations[] parse: infobox | location yalnizca bir alt kume; wiki Locations bolumunu (region→harita→bolge + kosul + waypoint adi) yapisal locations[]'a cevir — v0.3.14 text-based workaround'dan daha saglam
+- verifiedLinks multi-turn fix: DoChat basina sifirlanir, turn 2 turn 1'in gecerli kodlarini soyar — cozum: instance seviyesinde (veya en azindan oturum basina) link seti
+- COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
+- Yeni veri kaynaklari (kullanici 13 Eylul acti, henuz feasibility probe yapilmadi): snowcrows.com (PvE build), gw2mists.com (PvP/WvW build), metabattle.com (genel), guildjen.com (rehber). Oncelik: curl ile sayfa cek → HTML'de mi JS-render mi, robots.txt, arama endpoint'i. Feasibility sonuclarina gore tool tasarimi
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
 - "Neden turuncu" tooltip'i (kota mi, anlik 429 mu) — kucuk UI isi
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
