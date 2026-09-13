@@ -317,45 +317,36 @@ std::string FunctionHandler::HandleWiki(const json& args) {
 std::string FunctionHandler::TruncateWikitext(const std::string& wikitext, size_t maxBytes) {
     if (wikitext.size() <= maxBytes) return wikitext;
 
-    std::string truncated;
-    truncated.reserve(maxBytes);
+    std::string result;
+    auto extractSection = [&](const std::string& header) {
+        std::string h2 = "==" + header + "==";
+        std::string h2s = "== " + header + " ==";
+        auto pos = wikitext.find(h2);
+        if (pos == std::string::npos) pos = wikitext.find(h2s);
+        if (pos == std::string::npos) return;
 
-    size_t pos = 0;
-    bool inInfobox = false;
-    int braceDepth = 0;
-
-    while (pos < wikitext.size() && truncated.size() < maxBytes) {
-        if (pos + 1 < wikitext.size() && wikitext[pos] == '{' && wikitext[pos + 1] == '{') {
-            braceDepth++;
-            if (braceDepth == 1) {
-                auto lower = wikitext.substr(pos, 60);
-                std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-                if (lower.find("infobox") != std::string::npos)
-                    inInfobox = true;
-            }
-            if (!inInfobox) {
-                pos += 2;
-                continue;
-            }
+        auto end = wikitext.find("\n==", pos + h2.size());
+        if (end == std::string::npos) end = wikitext.size();
+        std::string section = wikitext.substr(pos, std::min(end - pos, (size_t)1500));
+        if (!section.empty()) {
+            result += "\n" + section + "\n";
         }
-        if (pos + 1 < wikitext.size() && wikitext[pos] == '}' && wikitext[pos + 1] == '}') {
-            braceDepth--;
-            if (braceDepth <= 0) {
-                inInfobox = false;
-                braceDepth = 0;
-            }
-            if (!inInfobox) {
-                pos += 2;
-                continue;
-            }
-        }
+    };
 
-        truncated += wikitext[pos];
-        pos++;
-    }
+    auto firstSection = wikitext.find("\n==");
+    if (firstSection == std::string::npos) firstSection = wikitext.size();
+    std::string lead = wikitext.substr(0, std::min(firstSection, (size_t)1500));
+    result = lead;
 
-    if (truncated.size() >= maxBytes)
-        truncated += "\n... (truncated)";
+    extractSection("Location");
+    extractSection("Locations");
+    extractSection("Acquisition");
+    extractSection("Walkthrough");
+    extractSection("Contents");
+    extractSection("Notes");
 
-    return truncated;
+    if (result.size() > maxBytes)
+        result = result.substr(0, maxBytes) + "\n... (truncated)";
+
+    return result;
 }

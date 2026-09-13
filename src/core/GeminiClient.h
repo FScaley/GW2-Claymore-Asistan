@@ -57,6 +57,7 @@ public:
 
     using LogFunc = std::function<void(const std::string&)>;
     void SetLogger(LogFunc fn) { m_logger = fn; }
+    LogFunc GetLogger() const { return m_logger; }
 
     std::vector<ModelCooldown> GetCooldowns() const;
     int GetShortestWait() const;

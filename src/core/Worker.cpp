@@ -1,17 +1,59 @@
 #include "Worker.h"
+#include <regex>
+#include <set>
 
 const std::string Worker::SYSTEM_PROMPT =
-    "Sen GW2-Claymore Asistan'sin. Guild Wars 2 hakkinda uzmansin.\n"
-    "- Ingilizce ara ve dusun, Turkce cevap ver.\n"
-    "- GW2'de Turkce lokalizasyon yok: item/NPC/map isimlerini Ingilizce yaz, aciklamalari Turkce yap.\n"
-    "- Waypoint chat kodlarini ASLA kendin uydurma. Sadece tool sonuclarindan gelen chat_link degerlerini kullan. Yoksa 'waypoint kodu mevcut degil' de.\n"
-    "- Fiyatlari altin/gumus/bakir (g/s/c) olarak goster.\n"
-    "- Craft malzemeleri icin maliyet dagilimi goster.\n"
-    "- NPC konumlari icin en yakin waypoint ve kisa yol tarifi ver.\n"
-    "- Kesin olmayan bilgilerde bunu belirt.\n"
-    "- Kisa ve oz cevaplar ver.\n"
-    "- Item fiyati, crafting tarifi veya wiki bilgisi gerektiginde uygun tool'u kullan.\n"
-    "- Tool sonuclarini kullaniciya Turkce ozet olarak sun, ham JSON gosterme.";
+    "You are GW2-Claymore Asistan, a Guild Wars 2 (2012, ArenaNet) assistant.\n"
+    "Guild Wars 1 (2005, Prophecies/Factions/Nightfall) is a DIFFERENT game. NEVER use GW1 knowledge.\n"
+    "\n"
+    "CRITICAL RULES:\n"
+    "1. Your training data on GW2 is UNRELIABLE. For ANY factual question (item, NPC, location, event, recipe, waypoint, price), ALWAYS call a tool FIRST. Never answer from memory alone.\n"
+    "2. Waypoint codes [&...] MUST be copied VERBATIM from gw2_map tool output. If gw2_map returns no waypoints, say 'waypoint kodu mevcut degil'. NEVER generate or guess a waypoint code.\n"
+    "3. For location questions, ALWAYS call gw2_map to get real waypoint codes.\n"
+    "4. For item/price questions, ALWAYS call gw2_item_info.\n"
+    "5. For crafting questions, ALWAYS call gw2_recipe.\n"
+    "6. For general knowledge, call gw2_wiki.\n"
+    "\n"
+    "RESPONSE FORMAT:\n"
+    "- Reply in Turkish. Keep item/NPC/map names in English.\n"
+    "- Show prices as gold/silver/copper (g/s/c).\n"
+    "- Summarize tool results in Turkish. Never show raw JSON.\n"
+    "- Keep answers concise.\n"
+    "- If unsure, say so explicitly.";
+
+static std::set<std::string> ExtractChatLinks(const std::string& text) {
+    std::set<std::string> links;
+    std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
+    auto begin = std::sregex_iterator(text.begin(), text.end(), re);
+    auto end = std::sregex_iterator();
+    for (auto it = begin; it != end; ++it)
+        links.insert(it->str());
+    return links;
+}
+
+static std::string StripUnverifiedChatLinks(const std::string& text,
+                                             const std::set<std::string>& verified,
+                                             std::function<void(const std::string&)> logger) {
+    std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
+    std::string result;
+    auto begin = std::sregex_iterator(text.begin(), text.end(), re);
+    auto end = std::sregex_iterator();
+    size_t lastPos = 0;
+
+    for (auto it = begin; it != end; ++it) {
+        result += text.substr(lastPos, it->position() - lastPos);
+        std::string code = it->str();
+        if (verified.count(code)) {
+            result += code;
+        } else {
+            result += "[kod dogrulanamadi]";
+            if (logger) logger("Stripped fake chatlink: " + code);
+        }
+        lastPos = it->position() + it->length();
+    }
+    result += text.substr(lastPos);
+    return result;
+}
 
 void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
                    LogFunc logger) {
@@ -111,6 +153,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
     }
 
     auto tools = FunctionHandler::GetToolDefinitions();
+    std::set<std::string> verifiedLinks;
 
     GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
                                         m_interactionId, m_interactionModel,
@@ -138,6 +181,10 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
             call.name = fc.name;
             call.arguments = fc.arguments;
             auto result = m_funcHandler->Handle(call);
+
+            auto links = ExtractChatLinks(result.resultText);
+            verifiedLinks.insert(links.begin(), links.end());
+
             results.push_back({result.callId, {result.name, result.resultText}});
         }
 
@@ -160,10 +207,9 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     SetToolStatus("");
 
-    if (resp.RequiresAction() && IsGenerationCurrent(gen)) {
-        SetToolStatus("Sonuclandiriliyor...");
-        resp = m_gemini.Ask(question, SYSTEM_PROMPT, "", "", nlohmann::json());
-        SetToolStatus("");
+    if (resp.RequiresAction()) {
+        resp.ok = false;
+        resp.error = "Bu soru icin kesin veri bulunamadi. Lutfen farkli sekilde sormayı deneyin.";
     }
 
     if (!resp.ok && resp.error.empty())
@@ -174,7 +220,10 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
     m_snapshot.generation = gen;
 
     if (resp.ok) {
-        m_snapshot.messages.push_back({ChatMessage::Assistant, resp.text});
+        auto logger = m_gemini.GetLogger();
+        std::string safeText = StripUnverifiedChatLinks(resp.text, verifiedLinks, logger);
+
+        m_snapshot.messages.push_back({ChatMessage::Assistant, safeText});
         m_snapshot.activeModel = resp.activeModel;
         m_snapshot.fallbackUsed = resp.fallbackUsed;
         m_interactionId = resp.interactionId;
