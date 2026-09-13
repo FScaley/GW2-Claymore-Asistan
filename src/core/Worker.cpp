@@ -161,6 +161,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     if (!IsGenerationCurrent(gen)) return;
 
+    bool initialFallback = resp.fallbackUsed;
     int fcRound = 0;
     while (resp.RequiresAction() && fcRound < MAX_FC_ROUNDS && IsGenerationCurrent(gen)) {
         fcRound++;
@@ -181,6 +182,12 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
             call.name = fc.name;
             call.arguments = fc.arguments;
             auto result = m_funcHandler->Handle(call);
+
+            auto logger = m_gemini.GetLogger();
+            if (logger) {
+                std::string preview = result.resultText.substr(0, 120);
+                logger("FC " + fc.name + " " + fc.arguments.dump() + " -> " + preview);
+            }
 
             auto links = ExtractChatLinks(result.resultText);
             verifiedLinks.insert(links.begin(), links.end());
@@ -225,7 +232,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
         m_snapshot.messages.push_back({ChatMessage::Assistant, safeText});
         m_snapshot.activeModel = resp.activeModel;
-        m_snapshot.fallbackUsed = resp.fallbackUsed;
+        m_snapshot.fallbackUsed = initialFallback || resp.fallbackUsed;
         m_interactionId = resp.interactionId;
         m_interactionModel = resp.activeModel;
         m_snapshot.error.clear();

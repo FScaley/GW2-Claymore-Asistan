@@ -5,8 +5,8 @@
 using json = nlohmann::json;
 
 const std::vector<std::string> GeminiClient::DEFAULT_CHAIN = {
-    "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.8-flash"
 };
 

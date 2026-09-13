@@ -4,7 +4,10 @@
 #include "core/GW2Client.h"
 #include "core/ItemIndex.h"
 #include "core/FunctionHandler.h"
+#include "core/Worker.h"
 #include <cstdio>
+#include <thread>
+#include <chrono>
 
 static const char* SYSTEM_PROMPT =
     "Sen GW2-Claymore Asistan'sin. Guild Wars 2 hakkinda uzmansin.\n"
@@ -138,6 +141,31 @@ int main() {
     } else {
         for (auto& cd : cds)
             printf("Cooldown: %s = %d sn\n", cd.model.c_str(), cd.waitSeconds);
+    }
+
+    printf("\n=== TEST 5: Waypoint FC loop (Worker) ===\n");
+    {
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        Worker w;
+        w.Start(&config, &fht, [](const std::string& m) {
+            printf("  [LOG] %s\n", m.c_str());
+        });
+        w.RequestChat("Kessex Hills'de Toxic Spider Queen nerede, en yakin waypoint hangisi?");
+        for (int i = 0; i < 600; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap = w.GetChatSnapshot();
+        w.Stop();
+        for (auto& m : snap.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+        }
+        printf("model=%s fallback=%d error=%s\n",
+               snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
     }
 
     printf("\n=== TUMU GECTI ===\n");

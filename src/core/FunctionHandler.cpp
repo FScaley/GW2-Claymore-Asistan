@@ -118,6 +118,9 @@ int FunctionHandler::ResolveItemId(const std::string& name) {
 }
 
 int FunctionHandler::ResolveMapId(const std::string& name) {
+    int cached = m_index->Find("map:" + name);
+    if (cached > 0) return cached;
+
     auto results = m_gw2->WikiSearch(name, 5);
     if (results.empty()) return 0;
 
@@ -130,8 +133,12 @@ int FunctionHandler::ResolveMapId(const std::string& name) {
         if (!isMapPage) continue;
 
         std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
-        if (!idStr.empty())
-            return std::stoi(idStr);
+        if (!idStr.empty()) {
+            int id = std::stoi(idStr);
+            m_index->Add("map:" + name, id);
+            m_index->Add("map:" + r.title, id);
+            return id;
+        }
     }
     return 0;
 }
@@ -292,6 +299,16 @@ std::string FunctionHandler::HandleWiki(const json& args) {
     if (!page.found)
         return "{\"error\": \"Wiki page not found: " + results[0].title + "\"}";
 
+    if (page.wikitext.substr(0, 9) == "#REDIRECT") {
+        auto lb = page.wikitext.find("[[");
+        auto rb = page.wikitext.find("]]");
+        if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
+            std::string target = page.wikitext.substr(lb + 2, rb - lb - 2);
+            auto redirected = m_gw2->WikiGetPage(target);
+            if (redirected.found) page = redirected;
+        }
+    }
+
     json result;
     result["title"] = page.title;
     result["url"] = results[0].url;
@@ -309,6 +326,45 @@ std::string FunctionHandler::HandleWiki(const json& args) {
         int id = std::stoi(idStr);
         result["item_id"] = id;
         m_index->Add(page.title, id);
+    }
+
+    std::string locationMap;
+    auto firstHeader = page.wikitext.find("\n==");
+    size_t leadEnd = (firstHeader != std::string::npos) ? firstHeader : page.wikitext.size();
+    std::string lead = page.wikitext.substr(0, leadEnd);
+    auto locPos = lead.find("| location");
+    if (locPos == std::string::npos) locPos = lead.find("|location");
+    if (locPos != std::string::npos) {
+        auto eq = lead.find('=', locPos);
+        if (eq != std::string::npos) {
+            auto lb = lead.find("[[", eq);
+            auto rb = lead.find("]]", eq);
+            auto nl = lead.find('\n', eq);
+            if (lb != std::string::npos && rb != std::string::npos && rb > lb
+                && (nl == std::string::npos || lb < nl)) {
+                locationMap = page.wikitext.substr(lb + 2, rb - lb - 2);
+                auto pipe = locationMap.find('|');
+                if (pipe != std::string::npos) locationMap = locationMap.substr(0, pipe);
+            }
+        }
+    }
+
+    if (!locationMap.empty()) {
+        int mapId = ResolveMapId(locationMap);
+        if (mapId > 0) {
+            auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
+            if (mapInfo.found && !mapInfo.waypoints.empty()) {
+                result["map_name"] = mapInfo.name;
+                json waypoints = json::array();
+                for (auto& wp : mapInfo.waypoints) {
+                    json w;
+                    w["name"] = wp.name;
+                    w["chat_link"] = wp.chatLink;
+                    waypoints.push_back(w);
+                }
+                result["nearby_waypoints"] = waypoints;
+            }
+        }
     }
 
     return result.dump();
