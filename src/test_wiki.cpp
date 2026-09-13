@@ -7,6 +7,10 @@
 
 using json = nlohmann::json;
 
+static bool Markdown_IsChatLinkLike(const std::string& s) {
+    return s.size() >= 4 && s[0] == '[' && s[1] == '&' && s.back() == ']';
+}
+
 static int g_fail = 0;
 static void Check(bool ok, const char* what) {
     printf("  [%s] %s\n", ok ? "OK" : "FAIL", what);
@@ -118,6 +122,67 @@ int main() {
         call.arguments = {{"query", "Roller Beetle"}};
         auto res = fh.Handle(call, [] { return true; });
         Check(res.resultText.find("cancelled") != std::string::npos, "cancel returns cancelled error");
+    }
+
+    printf("\n=== F: NPC location -> map waypoints (Gorrik) ===\n");
+    {
+        ItemIndex idx;
+        FunctionHandler fh(&gw2, &idx);
+        FunctionCall call;
+        call.id = "t4";
+        call.name = "gw2_wiki";
+        call.arguments = {{"query", "Gorrik"}};
+        auto res = fh.Handle(call);
+        json j = json::parse(res.resultText, nullptr, false);
+        Check(!j.is_discarded(), "Gorrik result is valid JSON");
+        if (!j.is_discarded()) {
+            size_t locCount = j.contains("locations") ? j["locations"].size() : 0;
+            printf("title=%s primary_map=%s locations=%zu other=%s bytes=%zu\n",
+                   j.value("title", "?").c_str(), j.value("map_name", "-").c_str(), locCount,
+                   j.value("other_locations", json::array()).dump().c_str(), res.resultText.size());
+            bool kournaFound = false, alliedWp = false, thunderheadHere = false;
+            if (j.contains("locations")) {
+                for (auto& loc : j["locations"]) {
+                    std::string mn = loc.value("map_name", "");
+                    size_t n = loc.contains("waypoints") ? loc["waypoints"].size() : 0;
+                    std::string first = (n > 0) ? loc["waypoints"][0].value("name", "") : "";
+                    printf("  - %s npc_here=%d areas=%s waypoints=%zu first=%s\n", mn.c_str(),
+                           (int)loc.value("npc_here", false), loc.value("areas", json::array()).dump().c_str(),
+                           n, first.c_str());
+                    if (mn == "Domain of Kourna") {
+                        kournaFound = true;
+                        for (auto& w : loc["waypoints"])
+                            if (w.value("name", "").find("Allied Encampment") != std::string::npos &&
+                                Markdown_IsChatLinkLike(w.value("chat_link", ""))) alliedWp = true;
+                    }
+                    if (mn == "Thunderhead Peaks" && loc.value("npc_here", false)) thunderheadHere = true;
+                }
+            }
+            Check(kournaFound, "locations include Domain of Kourna (area 'Allied Encampment' -> within)");
+            Check(alliedWp, "Domain of Kourna waypoints include Allied Encampment Waypoint with real chat_link (POIs live on floor 49, not default_floor 1)");
+            Check(thunderheadHere, "npc_here marks Thunderhead Peaks (wiki coordinates) and it is listed first");
+            Check(j.value("map_name", "") == "Thunderhead Peaks", "primary map_name mirrors the npc_here entry");
+        }
+    }
+
+    printf("\n=== G: multi-area NPC (Champion Toxic Spider Queen) ===\n");
+    {
+        ItemIndex idx;
+        FunctionHandler fh(&gw2, &idx);
+        FunctionCall call;
+        call.id = "t5";
+        call.name = "gw2_wiki";
+        call.arguments = {{"query", "Champion Toxic Spider Queen"}};
+        auto res = fh.Handle(call);
+        json j = json::parse(res.resultText, nullptr, false);
+        Check(!j.is_discarded(), "Toxic Spider Queen result is valid JSON");
+        if (!j.is_discarded()) {
+            size_t wpCount = j.contains("nearby_waypoints") ? j["nearby_waypoints"].size() : 0;
+            printf("map_name=%s waypoints=%zu\n", j.value("map_name", "-").c_str(), wpCount);
+            Check(j.value("map_name", "") == "Kessex Hills",
+                  "semicolon area list resolves first area to Kessex Hills");
+            Check(wpCount >= 10, "Kessex Hills waypoints attached");
+        }
     }
 
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);

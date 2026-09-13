@@ -2,6 +2,8 @@
 #include "WikiText.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstring>
 
 using json = nlohmann::json;
 
@@ -18,6 +20,110 @@ static std::string LowerStr(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return std::tolower(c); });
     return s;
+}
+
+static std::string LeadOf(const std::string& wikitext) {
+    auto firstHeader = wikitext.find("\n==");
+    return wikitext.substr(0, firstHeader == std::string::npos ? wikitext.size() : firstHeader);
+}
+
+static std::string InfoboxField(const std::string& text, const std::string& field) {
+    size_t pos = 0;
+    while ((pos = text.find('|', pos)) != std::string::npos) {
+        size_t p = pos + 1;
+        while (p < text.size() && (text[p] == ' ' || text[p] == '\t')) ++p;
+        if (text.compare(p, field.size(), field) == 0) {
+            size_t q = p + field.size();
+            while (q < text.size() && (text[q] == ' ' || text[q] == '\t')) ++q;
+            if (q < text.size() && text[q] == '=') {
+                size_t nl = text.find('\n', q);
+                return TrimStr(text.substr(q + 1, nl == std::string::npos ? std::string::npos : nl - q - 1));
+            }
+        }
+        pos = pos + 1;
+    }
+    return "";
+}
+
+static std::string StripWikiLink(std::string s) {
+    s = TrimStr(s);
+    if (s.size() >= 4 && s.compare(0, 2, "[[") == 0) {
+        auto rb = s.find("]]");
+        if (rb != std::string::npos) {
+            std::string inner = s.substr(2, rb - 2);
+            auto pipe = inner.find('|');
+            s = TrimStr(pipe == std::string::npos ? inner : inner.substr(0, pipe));
+        }
+    }
+    return s;
+}
+
+static std::vector<std::string> SplitLocations(std::string value, size_t cap) {
+    for (const char* br : {"<br />", "<br/>", "<br>"}) {
+        size_t p;
+        while ((p = value.find(br)) != std::string::npos) value.replace(p, std::strlen(br), ";");
+    }
+    std::vector<std::string> out;
+    size_t start = 0;
+    while (start <= value.size() && out.size() < cap) {
+        auto semi = value.find(';', start);
+        std::string part = value.substr(start, semi == std::string::npos ? std::string::npos : semi - start);
+        while (true) {
+            auto a = part.find("{{");
+            if (a == std::string::npos) break;
+            auto b = part.find("}}", a);
+            if (b == std::string::npos) { part = part.substr(0, a); break; }
+            part.erase(a, b - a + 2);
+        }
+        part = StripWikiLink(part);
+        if (!part.empty()) out.push_back(part);
+        if (semi == std::string::npos) break;
+        start = semi + 1;
+    }
+    return out;
+}
+
+static bool ParseCoordinates(const std::string& value, double& x, double& y) {
+    auto lb = value.find('[');
+    auto rb = value.find(']');
+    std::string inner = (lb != std::string::npos && rb != std::string::npos && rb > lb)
+        ? value.substr(lb + 1, rb - lb - 1) : value;
+    auto comma = inner.find(',');
+    if (comma == std::string::npos) return false;
+    try {
+        x = std::stod(TrimStr(inner.substr(0, comma)));
+        y = std::stod(TrimStr(inner.substr(comma + 1)));
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static bool InContinentRect(const GW2MapInfo& m, double x, double y) {
+    if (!m.hasContRect) return false;
+    double x1 = std::min(m.contRect[0][0], m.contRect[1][0]);
+    double x2 = std::max(m.contRect[0][0], m.contRect[1][0]);
+    double y1 = std::min(m.contRect[0][1], m.contRect[1][1]);
+    double y2 = std::max(m.contRect[0][1], m.contRect[1][1]);
+    return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+}
+
+static json BuildWaypointList(std::vector<GW2Waypoint> wps, bool sortByDist, double px, double py) {
+    auto dist = [&](const GW2Waypoint& w) {
+        return w.hasCoord ? std::hypot(w.x - px, w.y - py) : 1e18;
+    };
+    if (sortByDist)
+        std::sort(wps.begin(), wps.end(),
+                  [&](const GW2Waypoint& a, const GW2Waypoint& b) { return dist(a) < dist(b); });
+    json arr = json::array();
+    for (size_t i = 0; i < wps.size(); ++i) {
+        json w;
+        w["name"] = wps[i].name;
+        w["chat_link"] = wps[i].chatLink;
+        if (sortByDist && i == 0 && wps[i].hasCoord) w["nearest"] = true;
+        arr.push_back(w);
+    }
+    return arr;
 }
 
 FunctionHandler::FunctionHandler(GW2Client* gw2, ItemIndex* index)
@@ -96,7 +202,7 @@ json FunctionHandler::GetToolDefinitions() {
     tools.push_back({
         {"type", "function"},
         {"name", "gw2_wiki"},
-        {"description", "Search the GW2 Wiki and return the page as readable text plus a 'sections' list. For mounts, legendaries, collections and achievements the result also includes 'sub_collections': the COMPLETE item list of every linked collection, extracted directly from the wiki tables — always relay those lists verbatim. If the page itself is a collection, its items are in 'items'. Pass 'section' (a name from the 'sections' list) to fetch one specific section in full when the default content was truncated. Do NOT use this for waypoint codes - use gw2_map instead."},
+        {"description", "Search the GW2 Wiki and return the page as readable text plus a 'sections' list. For mounts, legendaries, collections and achievements the result also includes 'sub_collections': the COMPLETE item list of every linked collection, extracted directly from the wiki tables — always relay those lists verbatim. If the page itself is a collection, its items are in 'items'. For NPC, boss and event pages the result includes 'location_areas' and 'locations': one entry per map the NPC appears in ({map_name, areas, npc_here, waypoints[] with REAL chat_link codes}); 'npc_here': true marks the map containing the NPC's known coordinates and its waypoints are sorted nearest-first ('nearest': true on the first). Pick the entry that matches the user's question (e.g. the map they named); 'map_name'/'nearby_waypoints' mirror the primary entry. For areas in 'other_locations' call gw2_map. Pass 'section' (a name from the 'sections' list) to fetch one specific section in full when the default content was truncated."},
         {"parameters", {
             {"type", "object"},
             {"properties", {
@@ -138,7 +244,9 @@ int FunctionHandler::ResolveItemId(const std::string& name) {
     return 0;
 }
 
-int FunctionHandler::ResolveMapId(const std::string& name) {
+int FunctionHandler::ResolveMapId(const std::string& rawName, int depth) {
+    std::string name = TrimStr(rawName);
+    if (name.empty() || depth > 2) return 0;
     int cached = m_index->Find("map:" + name);
     if (cached > 0) return cached;
 
@@ -149,16 +257,36 @@ int FunctionHandler::ResolveMapId(const std::string& name) {
         auto page = m_gw2->WikiGetPage(r.title);
         if (!page.found) continue;
 
-        bool isMapPage = page.wikitext.find("Location infobox") != std::string::npos
-                      || page.wikitext.find("location infobox") != std::string::npos;
-        if (!isMapPage) continue;
+        if (page.wikitext.rfind("#REDIRECT", 0) == 0) {
+            auto lb = page.wikitext.find("[[");
+            auto rb = page.wikitext.find("]]");
+            if (lb == std::string::npos || rb == std::string::npos || rb <= lb) continue;
+            std::string target = page.wikitext.substr(lb + 2, rb - lb - 2);
+            auto hash = target.find('#');
+            if (hash != std::string::npos) target = target.substr(0, hash);
+            page = m_gw2->WikiGetPage(target);
+            if (!page.found) continue;
+        }
 
-        std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
+        std::string lead = LeadOf(page.wikitext);
+        if (LowerStr(lead).find("location infobox") == std::string::npos) continue;
+
+        std::string idStr = GW2Client::ExtractItemIdFromWikitext(lead);
         if (!idStr.empty()) {
             int id = std::stoi(idStr);
             m_index->Add("map:" + name, id);
             m_index->Add("map:" + r.title, id);
             return id;
+        }
+
+        std::string within = StripWikiLink(InfoboxField(lead, "within"));
+        if (!within.empty() && LowerStr(within) != LowerStr(name)) {
+            int id = ResolveMapId(within, depth + 1);
+            if (id > 0) {
+                m_index->Add("map:" + name, id);
+                m_index->Add("map:" + r.title, id);
+                return id;
+            }
         }
     }
     return 0;
@@ -455,44 +583,67 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
     }
     if (!subs.empty()) result["sub_collections"] = subs;
 
-    std::string locationMap;
-    auto firstHeader = wikiPage.wikitext.find("\n==");
-    size_t leadEnd = (firstHeader != std::string::npos) ? firstHeader : wikiPage.wikitext.size();
-    std::string lead = wikiPage.wikitext.substr(0, leadEnd);
-    auto locPos = lead.find("| location");
-    if (locPos == std::string::npos) locPos = lead.find("|location");
-    if (locPos != std::string::npos) {
-        auto eq = lead.find('=', locPos);
-        if (eq != std::string::npos) {
-            auto lb = lead.find("[[", eq);
-            auto rb = lead.find("]]", eq);
-            auto nl = lead.find('\n', eq);
-            if (lb != std::string::npos && rb != std::string::npos && rb > lb
-                && (nl == std::string::npos || lb < nl)) {
-                locationMap = lead.substr(lb + 2, rb - lb - 2);
-                auto pipe = locationMap.find('|');
-                if (pipe != std::string::npos) locationMap = locationMap.substr(0, pipe);
-            }
-        }
-    }
+    std::string lead = LeadOf(wikiPage.wikitext);
+    std::vector<std::string> areas = SplitLocations(InfoboxField(lead, "location"), 4);
+    double npcX = 0, npcY = 0;
+    bool hasNpcCoord = ParseCoordinates(InfoboxField(lead, "coordinates"), npcX, npcY);
 
-    if (!locationMap.empty()) {
-        if (Cancelled(cancel)) return CANCELLED_JSON;
-        int mapId = ResolveMapId(locationMap);
-        if (mapId > 0) {
+    if (!areas.empty()) {
+        result["location_areas"] = areas;
+
+        struct LocEntry {
+            int mapId = 0;
+            std::string mapName;
+            std::vector<std::string> areas;
+            bool npcHere = false;
+            json waypoints;
+        };
+        std::vector<LocEntry> entries;
+        json otherAreas = json::array();
+
+        for (auto& area : areas) {
+            if (Cancelled(cancel)) return CANCELLED_JSON;
+            int mapId = ResolveMapId(area);
+            if (mapId <= 0) { otherAreas.push_back(area); continue; }
+
+            bool merged = false;
+            for (auto& e : entries)
+                if (e.mapId == mapId) { e.areas.push_back(area); merged = true; break; }
+            if (merged) continue;
+            if (entries.size() >= 3) { otherAreas.push_back(area); continue; }
+
             auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
-            if (mapInfo.found && !mapInfo.waypoints.empty()) {
-                result["map_name"] = mapInfo.name;
-                json waypoints = json::array();
-                for (auto& wp : mapInfo.waypoints) {
-                    json w;
-                    w["name"] = wp.name;
-                    w["chat_link"] = wp.chatLink;
-                    waypoints.push_back(w);
-                }
-                result["nearby_waypoints"] = waypoints;
-            }
+            if (!mapInfo.found || mapInfo.waypoints.empty()) continue;
+
+            LocEntry e;
+            e.mapId = mapId;
+            e.mapName = mapInfo.name;
+            e.areas.push_back(area);
+            e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
+            e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
+            entries.push_back(std::move(e));
         }
+
+        std::stable_sort(entries.begin(), entries.end(),
+                         [](const LocEntry& a, const LocEntry& b) { return a.npcHere && !b.npcHere; });
+
+        if (!entries.empty()) {
+            json locs = json::array();
+            for (auto& e : entries) {
+                json l;
+                l["map_name"] = e.mapName;
+                l["map_id"] = e.mapId;
+                l["areas"] = e.areas;
+                l["npc_here"] = e.npcHere;
+                l["waypoints"] = e.waypoints;
+                locs.push_back(l);
+            }
+            result["locations"] = locs;
+            result["map_name"] = entries[0].mapName;
+            result["location_area"] = entries[0].areas[0];
+            result["nearby_waypoints"] = entries[0].waypoints;
+        }
+        if (!otherAreas.empty()) result["other_locations"] = otherAreas;
     }
 
     return result.dump();

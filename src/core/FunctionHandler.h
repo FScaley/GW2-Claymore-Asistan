@@ -37,7 +37,7 @@ private:
     std::string HandleWiki(const nlohmann::json& args, const CancelCheck& cancel);
 
     int ResolveItemId(const std::string& name);
-    int ResolveMapId(const std::string& name);
+    int ResolveMapId(const std::string& name, int depth = 0);
     nlohmann::json ExtractCollectionItems(const std::string& html);
 
     static bool Cancelled(const CancelCheck& c) { return c && c(); }

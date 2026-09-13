@@ -185,6 +185,20 @@ GW2MapInfo GW2Client::GetMap(int id) {
         m.regionName = j.value("region_name", "");
         m.continentId = j.value("continent_id", 0);
         m.continentName = j.value("continent_name", "");
+        if (j.contains("continent_rect") && j["continent_rect"].is_array() && j["continent_rect"].size() == 2) {
+            auto& r = j["continent_rect"];
+            if (r[0].is_array() && r[1].is_array() && r[0].size() == 2 && r[1].size() == 2) {
+                m.contRect[0][0] = r[0][0].get<double>();
+                m.contRect[0][1] = r[0][1].get<double>();
+                m.contRect[1][0] = r[1][0].get<double>();
+                m.contRect[1][1] = r[1][1].get<double>();
+                m.hasContRect = true;
+            }
+        }
+        m.defaultFloor = j.value("default_floor", 1);
+        if (j.contains("floors") && j["floors"].is_array())
+            for (auto& f : j["floors"])
+                if (f.is_number_integer()) m.floors.push_back(f.get<int>());
         return m;
     } catch (...) {}
     return {};
@@ -195,28 +209,46 @@ GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
     if (!mapInfo.found || mapInfo.continentId == 0 || mapInfo.regionId == 0)
         return mapInfo;
 
-    std::string path = "/v2/continents/" + std::to_string(mapInfo.continentId)
-                     + "/floors/1/regions/" + std::to_string(mapInfo.regionId)
-                     + "/maps/" + std::to_string(mapId);
-    auto resp = m_http.Get(API_HOST, path);
-    if (!resp || resp->statusCode != 200) return mapInfo;
+    std::vector<int> floorOrder;
+    floorOrder.push_back(mapInfo.defaultFloor);
+    for (int f : mapInfo.floors)
+        if (f != mapInfo.defaultFloor) floorOrder.push_back(f);
 
-    try {
-        auto j = json::parse(resp->body);
-        if (j.contains("points_of_interest") && j["points_of_interest"].is_object()) {
+    for (int floor : floorOrder) {
+        std::string path = "/v2/continents/" + std::to_string(mapInfo.continentId)
+                         + "/floors/" + std::to_string(floor)
+                         + "/regions/" + std::to_string(mapInfo.regionId)
+                         + "/maps/" + std::to_string(mapId);
+        auto resp = m_http.Get(API_HOST, path);
+        if (!resp || resp->statusCode != 200) continue;
+
+        try {
+            auto j = json::parse(resp->body);
+            if (!j.contains("points_of_interest") || !j["points_of_interest"].is_object()) continue;
             for (auto& [key, poi] : j["points_of_interest"].items()) {
-                std::string poiType = poi.value("type", "");
-                if (poiType != "waypoint") continue;
+                if (poi.value("type", "") != "waypoint") continue;
 
                 GW2Waypoint wp;
                 wp.name = poi.value("name", "");
                 wp.chatLink = poi.value("chat_link", "");
-                wp.floor = poi.value("floor", 0);
+                wp.floor = poi.value("floor", floor);
+                if (poi.contains("coord") && poi["coord"].is_array() && poi["coord"].size() == 2) {
+                    wp.x = poi["coord"][0].get<double>();
+                    wp.y = poi["coord"][1].get<double>();
+                    wp.hasCoord = true;
+                }
                 if (!wp.name.empty() && !wp.chatLink.empty())
                     mapInfo.waypoints.push_back(std::move(wp));
             }
+        } catch (...) {
+            continue;
         }
-    } catch (...) {}
+
+        if (!mapInfo.waypoints.empty()) {
+            mapInfo.floorUsed = floor;
+            break;
+        }
+    }
 
     return mapInfo;
 }

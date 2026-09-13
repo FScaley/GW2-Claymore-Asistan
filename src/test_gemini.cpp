@@ -159,13 +159,20 @@ int main() {
         }
         auto snap = w.GetChatSnapshot();
         w.Stop();
+        std::string all;
         for (auto& m : snap.messages) {
             const char* role = m.role == ChatMessage::User ? "USER" :
                               (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
             printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) all += m.text;
         }
         printf("model=%s fallback=%d error=%s\n",
                snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
+        printf("checks: has_code=%d gap_or_viathan_code=%d stripped=%d refused=%d\n",
+               all.find("[&") != std::string::npos,
+               (all.find("[&BLoDAAA=]") != std::string::npos || all.find("[&BBAAAAA=]") != std::string::npos),
+               all.find("dogrulanamadi") != std::string::npos,
+               (all.find("retilemed") != std::string::npos || all.find("mevcut degil") != std::string::npos));
     }
 
     printf("\n=== TEST 6: Collection FC loop (Worker) — Roller Beetle ===\n");
@@ -198,6 +205,38 @@ int main() {
                all.find("Beetle Feed") != std::string::npos,
                all.find("Beetle Juice") != std::string::npos,
                all.find("Inquest Beetle Notes") != std::string::npos);
+    }
+
+    printf("\n=== TEST 7: NPC in a named map (Worker) — Gorrik / Kourna ===\n");
+    {
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        Worker w;
+        w.Start(&config, &fht, [](const std::string& m) {
+            printf("  [LOG] %s\n", m.c_str());
+        });
+        w.RequestChat("kourna da gorrik nerede, en yakin waypoint?");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap = w.GetChatSnapshot();
+        w.Stop();
+        std::string all;
+        for (auto& m : snap.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) all += m.text;
+        }
+        printf("model=%s fallback=%d error=%s\n",
+               snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
+        printf("checks: AlliedEncampment=%d has_code=%d stripped=%d refused=%d\n",
+               all.find("Allied Encampment") != std::string::npos,
+               all.find("[&") != std::string::npos,
+               all.find("dogrulanamadi") != std::string::npos,
+               (all.find("retilemed") != std::string::npos || all.find("mevcut degil") != std::string::npos));
     }
 
     printf("\n=== TUMU GECTI ===\n");

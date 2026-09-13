@@ -47,6 +47,9 @@ struct GW2Waypoint {
     std::string name;
     std::string chatLink;
     int floor = 0;
+    double x = 0;
+    double y = 0;
+    bool hasCoord = false;
 };
 
 struct GW2MapInfo {
@@ -58,6 +61,11 @@ struct GW2MapInfo {
     std::string regionName;
     int continentId = 0;
     std::string continentName;
+    double contRect[2][2] = {{0, 0}, {0, 0}};
+    bool hasContRect = false;
+    int defaultFloor = 1;
+    std::vector<int> floors;
+    int floorUsed = 0;
     std::vector<GW2Waypoint> waypoints;
     bool found = false;
 };

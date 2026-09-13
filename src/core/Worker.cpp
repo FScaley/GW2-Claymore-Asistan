@@ -1,4 +1,5 @@
 #include "Worker.h"
+#include <chrono>
 #include <regex>
 #include <set>
 
@@ -13,7 +14,7 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Specific NPC, event, achievement info: call gw2_wiki\n"
     "- General advice, opinions, class/build recommendations: answer directly WITHOUT tools\n"
     "\n"
-    "WAYPOINT RULE: NEVER generate [&...] codes yourself. Only use chat_link values from tool results. If no tool provides a code, say the code is not available.\n"
+    "WAYPOINT RULE: NEVER generate [&...] codes yourself - copy them from tool results only. To GET a waypoint code, call gw2_map with the map name (from the question, or from gw2_wiki's map_name / location). gw2_wiki results for NPCs include 'locations': one entry per map the NPC appears in, each with real waypoint codes ('npc_here' marks the map of the NPC's known coordinates, nearest waypoint first) - pick the entry matching the map the user asked about and use its codes directly. NEVER tell the user that codes cannot be produced or that they must search the map themselves; if you lack a code, call gw2_map first. Only if gw2_map returns no waypoints for that map, say the code is not available.\n"
     "\n"
     "COLLECTION RULE: For mounts, legendaries, collections, achievements: the gw2_wiki result includes 'sub_collections' with complete item lists. List EVERY item from EVERY sub-collection, verbatim. For each item, use ONLY its 'hint' text (translate to Turkish) - NEVER substitute or add locations, NPCs, or quantities from memory. If a sub-collection you need is missing, call gw2_wiki with its exact name. NEVER add, remove, or rename items from memory. If the result has a 'sections' list and you need a section not included, call gw2_wiki again with the 'section' parameter.\n"
     "\n"
@@ -184,14 +185,18 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
             call.id = fc.id;
             call.name = fc.name;
             call.arguments = fc.arguments;
+            auto t0 = std::chrono::steady_clock::now();
             auto result = m_funcHandler->Handle(call,
                 [this, gen] { return !IsGenerationCurrent(gen); });
+            auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
 
             auto logger = m_gemini.GetLogger();
             if (logger) {
                 std::string preview = result.resultText.substr(0, 120);
                 logger("FC " + fc.name + " " + fc.arguments.dump() + " -> ("
-                       + std::to_string(result.resultText.size()) + "B) " + preview);
+                       + std::to_string(result.resultText.size()) + "B, "
+                       + std::to_string(elapsedMs) + "ms) " + preview);
             }
 
             auto links = ExtractChatLinks(result.resultText);
