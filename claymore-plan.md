@@ -95,15 +95,34 @@ Detaylar: `faz0-rapor.md`
 - Wiki redirect otomatik takibi (#REDIRECT [[X]]) — 1 Gemini round tasarrufu
 - HandleWiki: | location = [[Map]] algilanirsa o map'in waypointleri otomatik eklenir
 - ResolveMapId cache ("map:" prefix ile items_index.json)
-- Wiki TruncateWikitext: section-based (Location, Acquisition, Walkthrough, Contents, Notes)
+- Wiki TruncateWikitext: section-based (Location, Acquisition, Walkthrough, Contents, Notes) (v0.3.7'de kaldirildi — rendered HTML'e gecildi)
 - FC log: her tool cagrisi loglanir (name, args, result preview)
 - fallbackUsed: ilk Ask()'tan tasinir, FC loop icinde kaybolmaz
+
+**v0.3.7 (13 Eylul 2026) — Wiki yeniden yazimi: rendered HTML + deterministik koleksiyon cikarimi:**
+- Problem: "Roller Beetle mount nasil acilir?" sorusunda Gemini 3 koleksiyondan 2'sini, yanlis malzemelerle listeledi
+- Kok neden (dogrulandi): (a) gw2_wiki ham *wikitext* cekiyordu — "Beetle Saddle" gibi koleksiyon alt sayfalari 723 byte `{{achievement box}}{{collection table}}` sablonu, SIFIR item adi; gercek tablo yalnizca render edilmis HTML'de var. (b) Eski TruncateWikitext bolum-adi whitelist'i (Location/Acquisition/Walkthrough/Contents/Notes) `== Unlocking ==` bolumunu kaciriyordu. (c) Gemini boslugu hafizadan doldurdu
+- Mimari: wiki *icerigi* icin wikitext → rendered HTML (`action=parse&prop=text`); wikitext yalnizca *yapi* icin (infobox item ID, `| location =`, `#REDIRECT`, `{{achievement icon|page=X}}` / `{{collection|X}}` regex ile alt koleksiyon kesfi)
+- Yeni modul `src/core/WikiText.h/.cpp` (namespace WikiText): HtmlToText (kutuphanesiz state-machine HTML→text; tr→satir, td/th→` | `, li→`- `, h2-h4→`## Baslik`, entity decode, script/style govdesi + toc/navbox/infobox/thumb/mw-editsection/noprint/catlinks/reference elementleri atlanir, whitespace toplanir), ExtractTableRows (class'i verilen tablolarin baslik disi satirlari — "mech1" = koleksiyon tablolari), SplitLead (lead + level-2 bolumler), ExtractSubCollectionNames (#anchor atilir, "(achievements)" kategori sayfalari atlanir), DecodeEntities
+- Offline testte bulunan ve duzeltilen bug: ilk HtmlToText surumu atlanan elementlerin tag'lerini atliyor ama *metnini* atlamiyordu — script/style govdeleri metne sizdi (Beetle Saddle 15KB → fix sonrasi 2.7KB; 12KB JavaScript'ti) ve JS icindeki `<` karakterleri tag parse'ini bozup 12 bolumden yalnizca 1'ini algilatiyordu. Fix: skipDepth>0 iken metin bastirilir, script/style icin kapanis tag'i dogrudan aranir
+- GW2Client: WikiPage'e `html` alani, yeni `WikiGetPageHtml(title)` (`action=parse&prop=text&disabletoc=1&disableeditsection=1`, 25s timeout). WikiGetPage wikitext dondurmeye devam ediyor
+- HandleWiki yeniden yazildi: opensearch → wikitext (yapi) → `#REDIRECT [[X]]` takibi (#anchor atilir) → HTML → HtmlToText → SplitLead → content = lead + belge sirasiyla level-2 bolumler, WIKI_TEXT_BUDGET (12KB) dolunca kesilir ve Gemini'ye bolumu adiyla istemesi soylenir. TruncateWikitext silindi
+- Sonuc JSON alanlari: title, url, content, sections (bolum basliklari), related (diger opensearch sonuclari), item_id (infobox'ta varsa), items (sayfanin kendi mech1 tablosu varsa), sub_collections (`{name, item_count, items:[{name, hint}]}` — kesfedilen her alt koleksiyon icin, WIKI_SUBPAGE_CAP=5, HTML cekilip mech1 tablosu deterministik cikarilir; item vermeyen alt sayfalar sessizce atilir), map_name + nearby_waypoints (mevcut: `| location = [[Map]]` varsa gercek chat_link kodlariyla), section / section_error (opsiyonel `section` parametresi kullanildiginda), content_source="wikitext_fallback" (HTML cekilemezse)
+- ExtractCollectionItems(html): ilk hucresi sayisal satirlar → name = hucre[1], hint = `Hint:` ile baslayan hucre (prefix atilir). Hint yoksa `hint` anahtari yok (yanlis deger vermemek icin fallback yok)
+- Yeni opsiyonel tool parametresi `section` (string): bolum basliklariyla buyuk/kucuk harf duyarsiz eslesme → o bolum tam olarak (12KB'a kadar) doner
+- Tool icinde iptal: `FunctionHandler::Handle(call, CancelCheck shouldCancel)` (`CancelCheck = std::function<bool()>`). Worker `[this, gen]{ return !IsGenerationCurrent(gen); }` gecirir. HandleWiki her HTTP GET arasinda kontrol eder (search, wikitext, HTML, her alt koleksiyon, map lookup) ve `{"error": "cancelled by user"}` dondurur; HandleItemInfo/HandleRecipe ResolveItemId sonrasi kontrol eder. Eski "HandleWiki icinde iptal tepkisiz (~90s)" limiti kapandi — iptal artik tek GET icinde (≤10-25s) etkili
+- Worker: FC log satirina sonuc byte boyutu eklendi (`FC gw2_wiki {"query":"Roller Beetle"} -> (15731B) {"content":...`). System prompt'a COLLECTION RULE: mount/legendary/koleksiyon/achievement sorularinda her sub_collections girdisindeki her item aynen aktarilir; yalnizca verilen hint metni (cevrilerek) kullanilir, hafizadan konum/NPC/miktar eklenmez; eksik alt koleksiyon icin gw2_wiki tam adiyla cagrilir; kesilen bolumler icin `section` parametresi kullanilir
+- Yeni `src/test_wiki.cpp` → test_wiki.exe: SIFIR Gemini maliyeti (wiki + GW2 API). Kontroller: Beetle Saddle metninde CSS/JS sizintisi yok; Roller Beetle'da ≥3 bolum; gw2_wiki("Roller Beetle") gecerli JSON, sub_collections'ta Beetle Saddle (9 item), Beetle Feed (8), Beetle Juice (10) — "Inquest Beetle Notes" dahil; toplam <40KB (gercek 15.7KB); section=Unlocking calisiyor; iptal cancelled hatasi doner. Wiki yolundaki her degisiklik icin regresyon kapisi — ONCE bu calistirilir. Build: `cl /EHsc /std:c++17 /MT /I"../include" test_wiki.cpp core/HttpClient.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp /link winhttp.lib` (src/ icinden, VS Developer Command Prompt)
+- test_gemini TEST 6: Worker ile "Roller Beetle mount nasil acilir? Hangi koleksiyonlar ve hangi itemler lazim?" — gozlem: TEK gw2_wiki cagrisi, Gemini (Flash suite'in kendisi yuzunden cooldown'da oldugu icin Lite'ta) 3 koleksiyonu ve 27 item adini aynen listeledi. test_gemini build satirina core/WikiText.cpp eklendi. RPM maliyeti ~9 (Flash free tier 20 RPM — suite arka arkaya iki kez calistirilirsa 429 → Lite fallback; beklenen, zinciri test eder)
+- Kalan: bazi hint'ler Lite'ta hafizadan suslendi (wiki hint "Dabiji Hollows" derken model "Pogahn Bluffs" yazdi) — model davranisi, veri eksigi degil; prompt kurali ile azaltildi, Flash'ta daha iyi bekleniyor. Icerik butunlugu (item adlari/sayilari) deterministik
+- Bilinen limitler: alt koleksiyon fetch'leri seri, ~50KB HTML, cache yok (ayni mount iki kez = 4-5 tam fetch; yalnizca FC logunda tekrarlanan ayni gw2_wiki sorgusu gorulurse sayfa cache eklenir). ExtractTableRows mech1 tablosu icinde ic ice `<table>` desteklemiyor (gorulmedi). ExtractSubCollectionNames yalnizca iki sablonu taniyor — baska sablonla baglanan alt koleksiyonlar icin Gemini gw2_wiki'yi adiyla cagirmali. location→waypoints hala `| location = [[Map]]` formati gerektiriyor
 
 **Faz 2 kalan:**
 - imgui_markdown — zengin metin render (ayri release: font handling + link callback riski)
 - ~~gw2_map tool~~ (v0.3.3'te tamamlandi)
 - ~~Turkce font fix~~ (v0.2.8'de tamamlandi)
 - Google Search grounding: ucretli key varsa tools ekle (ertelendi — free tier'da test edilemez)
+- Wiki sayfa cache (kosullu: yalnizca FC logunda tekrarlanan ayni gw2_wiki sorgulari gorulurse — alt koleksiyon fetch'leri seri ve cache'siz)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
 
@@ -152,12 +171,12 @@ Detaylar: `faz0-rapor.md`
 ## Gemini API Notlari
 
 - Endpoint: /v1beta/interactions (Interactions API)
-- Model: gemini-3.8-flash (free), fallback: gemini-3.5-flash
+- Model zinciri (v0.3.6+): gemini-3.5-flash (birincil, 20 RPM) → gemini-3.5-flash-lite (yedek, 30 RPM) → gemini-3.8-flash. Config'deki model_chain korunur; varsayilan sadece yeni kurulumlar icin.
 - Free tier: 20 RPM, grounding kota 0, Pro limit 0
 - Eski modeller (2.5): yeni kullanicilara kapali
 - Key format: AQ. prefix gecerli
 - Response parse: steps[].content[].text (type=="model_output")
 - 429'da per-model cooldown + zincir fallback (v0.2.0'da degistirildi — rate limit havuzlari model basina)
-- Model zinciri: gemini-3.5-flash-lite → gemini-3.5-flash → gemini-3.8-flash
+- Function calling (v0.3.0+): tools[] + requires_action + function_result; sonuc ayni modele previous_interaction_id ile doner
 - Faz 2: model_tier=="paid" → Pro model + grounding tools aktif
 - 500/503'te de zincir fallback
