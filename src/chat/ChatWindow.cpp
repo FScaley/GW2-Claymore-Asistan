@@ -201,6 +201,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen, ImFont* font) {
 
     if (!ImGui::Begin("Claymore Asistan##chat", pOpen, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
+        if (font) ImGui::PopFont();
         PopGW2Style();
         return;
     }
