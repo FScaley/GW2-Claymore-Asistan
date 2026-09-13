@@ -191,17 +191,15 @@ void ChatWindow::RenderFormattedText(const std::string& text) {
     }
 }
 
-void ChatWindow::Render(Worker* worker, bool* pOpen, ImFont* font) {
+void ChatWindow::Render(Worker* worker, bool* pOpen) {
     if (!*pOpen) return;
 
     PushGW2Style();
-    if (font) ImGui::PushFont(font);
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(280, 220), ImVec2(800, 900));
 
     if (!ImGui::Begin("Claymore Asistan##chat", pOpen, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
-        if (font) ImGui::PopFont();
         PopGW2Style();
         return;
     }
@@ -326,6 +324,5 @@ void ChatWindow::Render(Worker* worker, bool* pOpen, ImFont* font) {
     }
 
     ImGui::End();
-    if (font) ImGui::PopFont();
     PopGW2Style();
 }

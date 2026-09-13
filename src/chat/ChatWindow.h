@@ -7,7 +7,7 @@
 
 class ChatWindow {
 public:
-    void Render(Worker* worker, bool* pOpen, ImFont* font = nullptr);
+    void Render(Worker* worker, bool* pOpen);
 
 private:
     void RenderFormattedText(const std::string& text);
