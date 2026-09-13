@@ -40,7 +40,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
     AddonDef.Version.Minor = 1;
-    AddonDef.Version.Build = 0;
+    AddonDef.Version.Build = 1;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -92,7 +92,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     APIDefs->Textures_LoadFromURL("ICON_CLAYMORE_HOVER",
         "https://wiki.guildwars2.com", "/images/3/37/Crimson_Antique_Claymore.png", nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.1.0 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.1.1 loaded.");
 }
 
 void AddonUnload() {
@@ -118,7 +118,7 @@ void AddonRender() {
 
 void AddonOptions() {
     if (!g_config) return;
-    ImGui::Text("Claymore Asistan v0.1.0");
+    ImGui::Text("Claymore Asistan v0.1.1");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 

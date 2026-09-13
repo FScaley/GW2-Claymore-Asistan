@@ -49,8 +49,8 @@ static const ImVec4 COL_ASSISTANT = ImVec4(0.93f, 0.91f, 0.67f, 1.0f);
 static const ImVec4 COL_SYSTEM    = ImVec4(1.00f, 0.35f, 0.30f, 1.0f);
 static const ImVec4 COL_DIM       = ImVec4(0.60f, 0.58f, 0.50f, 1.0f);
 static const ImVec4 COL_BODY      = ImVec4(1.00f, 1.00f, 1.00f, 1.0f);
-static const ImVec4 COL_CHATLINK  = ImVec4(0.40f, 0.85f, 0.95f, 1.0f);  // cyan — GW2 chat link color
-static const ImVec4 COL_BOLD      = ImVec4(1.00f, 0.84f, 0.00f, 1.0f);  // bright gold — #FFD700
+static const ImVec4 COL_CHATLINK  = ImVec4(0.40f, 0.85f, 0.95f, 1.0f);
+static const ImVec4 COL_BOLD      = ImVec4(1.00f, 0.84f, 0.00f, 1.0f);
 
 void ChatWindow::CopyToClipboard(const std::string& utf8) {
     if (!OpenClipboard(nullptr)) return;
@@ -69,106 +69,126 @@ void ChatWindow::CopyToClipboard(const std::string& utf8) {
     m_copiedAt = std::chrono::steady_clock::now();
 }
 
-// Segment types for rich text rendering
-struct TextSegment {
-    enum Type { Plain, Bold, ChatLink };
+struct RichToken {
+    enum Type { Plain, Bold, ChatLink, Newline };
     Type type;
     std::string text;
+    ImVec4 color;
 };
 
-static std::vector<TextSegment> ParseSegments(const std::string& text) {
-    std::vector<TextSegment> segs;
+static std::vector<RichToken> Tokenize(const std::string& text) {
+    std::vector<RichToken> tokens;
     size_t pos = 0;
     size_t len = text.size();
+    std::string accum;
+
+    auto flushAccum = [&](ImVec4 color, RichToken::Type type) {
+        if (accum.empty()) return;
+        size_t start = 0;
+        while (start < accum.size()) {
+            size_t nl = accum.find('\n', start);
+            if (nl == start) {
+                tokens.push_back({RichToken::Newline, "", {}});
+                start = nl + 1;
+            } else {
+                std::string chunk = (nl == std::string::npos)
+                    ? accum.substr(start) : accum.substr(start, nl - start);
+                size_t wstart = 0;
+                while (wstart < chunk.size()) {
+                    size_t sp = chunk.find(' ', wstart);
+                    std::string word;
+                    if (sp == std::string::npos) {
+                        word = chunk.substr(wstart);
+                        wstart = chunk.size();
+                    } else {
+                        word = chunk.substr(wstart, sp - wstart + 1);
+                        wstart = sp + 1;
+                    }
+                    if (!word.empty())
+                        tokens.push_back({type, word, color});
+                }
+                if (nl != std::string::npos) {
+                    tokens.push_back({RichToken::Newline, "", {}});
+                    start = nl + 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        accum.clear();
+    };
 
     while (pos < len) {
-        // Chat link: [&...=]
         if (text[pos] == '[' && pos + 1 < len && text[pos + 1] == '&') {
+            flushAccum(COL_BODY, RichToken::Plain);
             size_t end = text.find(']', pos);
             if (end != std::string::npos) {
-                segs.push_back({TextSegment::ChatLink, text.substr(pos, end - pos + 1)});
+                tokens.push_back({RichToken::ChatLink, text.substr(pos, end - pos + 1), COL_CHATLINK});
                 pos = end + 1;
                 continue;
             }
         }
-        // Bold: **...**
         if (pos + 1 < len && text[pos] == '*' && text[pos + 1] == '*') {
+            flushAccum(COL_BODY, RichToken::Plain);
             size_t end = text.find("**", pos + 2);
             if (end != std::string::npos) {
-                segs.push_back({TextSegment::Bold, text.substr(pos + 2, end - pos - 2)});
+                std::string bold = text.substr(pos + 2, end - pos - 2);
+                accum = bold;
+                flushAccum(COL_BOLD, RichToken::Bold);
                 pos = end + 2;
                 continue;
             }
         }
-        // Plain text: accumulate until next special
-        size_t next = pos;
-        while (next < len) {
-            if (text[next] == '[' && next + 1 < len && text[next + 1] == '&') break;
-            if (text[next] == '*' && next + 1 < len && text[next + 1] == '*') break;
-            next++;
-        }
-        segs.push_back({TextSegment::Plain, text.substr(pos, next - pos)});
-        pos = next;
+        accum += text[pos];
+        pos++;
     }
-    return segs;
+    flushAccum(COL_BODY, RichToken::Plain);
+    return tokens;
 }
 
 void ChatWindow::RenderFormattedText(const std::string& text) {
-    auto segments = ParseSegments(text);
+    auto tokens = Tokenize(text);
+    bool firstOnLine = true;
+    int linkId = 0;
+    float maxX = ImGui::GetContentRegionMax().x;
 
-    // Render main text with TextWrapped, replacing special segments inline
-    // Strategy: render paragraphs separately, chat links as clickable items
-    ImGui::PushTextWrapPos(0.0f);
+    for (auto& tok : tokens) {
+        if (tok.type == RichToken::Newline) {
+            ImGui::NewLine();
+            firstOnLine = true;
+            continue;
+        }
 
-    for (size_t si = 0; si < segments.size(); ++si) {
-        const auto& seg = segments[si];
+        ImVec2 sz = ImGui::CalcTextSize(tok.text.c_str());
+        if (tok.type == RichToken::ChatLink) sz.x += 8.0f;
 
-        switch (seg.type) {
-        case TextSegment::Plain:
-            if (!seg.text.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, COL_BODY);
-                ImGui::TextWrapped("%s", seg.text.c_str());
-                ImGui::PopStyleColor();
+        if (!firstOnLine) {
+            ImGui::SameLine(0, 0);
+            if (ImGui::GetCursorPosX() + sz.x > maxX) {
+                ImGui::NewLine();
             }
-            break;
+        }
 
-        case TextSegment::Bold:
-            if (!seg.text.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, COL_BOLD);
-                ImGui::TextWrapped("%s", seg.text.c_str());
-                ImGui::PopStyleColor();
-            }
-            break;
-
-        case TextSegment::ChatLink: {
-            ImGui::PushID(static_cast<int>(si));
-            ImVec2 sz = ImGui::CalcTextSize(seg.text.c_str());
-            sz.x += 8.0f;
-
+        if (tok.type == RichToken::ChatLink) {
+            ImGui::PushID(linkId++);
             ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.20f, 0.40f, 0.45f, 0.30f));
             ImGui::PushStyleColor(ImGuiCol_HeaderHovered,  ImVec4(0.25f, 0.50f, 0.55f, 0.50f));
             ImGui::PushStyleColor(ImGuiCol_HeaderActive,   ImVec4(0.30f, 0.60f, 0.65f, 0.70f));
             ImGui::PushStyleColor(ImGuiCol_Text, COL_CHATLINK);
-
-            if (ImGui::Selectable(seg.text.c_str(), false, 0, ImVec2(sz.x, 0))) {
-                CopyToClipboard(seg.text);
+            if (ImGui::Selectable(tok.text.c_str(), false, 0, ImVec2(sz.x, 0))) {
+                CopyToClipboard(tok.text);
             }
-
             ImGui::PopStyleColor(4);
-
-            bool justCopied = m_copiedText == seg.text &&
+            bool justCopied = m_copiedText == tok.text &&
                 std::chrono::steady_clock::now() - m_copiedAt < std::chrono::milliseconds(1500);
-            if (ImGui::IsItemHovered()) {
+            if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(justCopied ? "Kopyalandi!" : "Tikla: kopyala (oyun icine yapistir)");
-            }
-
             ImGui::PopID();
-            break;
+        } else {
+            ImGui::TextColored(tok.color, "%s", tok.text.c_str());
         }
-        }
+        firstOnLine = false;
     }
-
-    ImGui::PopTextWrapPos();
 }
 
 void ChatWindow::Render(Worker* worker, bool* pOpen) {
@@ -219,6 +239,8 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             ImGui::Spacing();
         }
 
+        ImGui::PushID(static_cast<int>(i));
+
         if (msg.role == ChatMessage::User) {
             ImGui::PushStyleColor(ImGuiCol_Text, COL_USER);
             ImGui::Text("Sen:");
@@ -242,6 +264,8 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
         }
+
+        ImGui::PopID();
     }
 
     if (snap.busy) {

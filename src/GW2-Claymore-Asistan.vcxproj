@@ -88,7 +88,7 @@
       <AdditionalDependencies>winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(TargetPath)" "$(SolutionDir)..\addons\claymore-asistan.dll"
+      <Command>copy "$(TargetPath)" "$(ProjectDir)..\..\addons\claymore-asistan.dll"
 exit /b 0</Command>
       <Message>Copying DLL to addons folder...</Message>
     </PostBuildEvent>
