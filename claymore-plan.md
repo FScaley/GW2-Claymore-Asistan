@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.12 bugfix)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.13 bugfix)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -169,11 +169,20 @@ Detaylar: `faz0-rapor.md`
 - Surec notu: ilk commit denemesinde PowerShell here-string'i `git commit -F -` yerine argumana gitti → commit olmadi ama tag+release eski commit'e (7d30f76) atildi; release+tag silindi (`gh release delete --cleanup-tag`), mesaj dosyadan commit (1794dd8), tag/push/release yenilendi; tag deref yerel+uzak dogrulandi. Kural: commit mesajini dosyaya yaz, `-F dosya`; tag atmadan once `git log -1` kontrol et
 - Bilinen limitler: HttpClient `WINHTTP_ACCESS_TYPE_DEFAULT_PROXY` — kullanici (tarayici) proxy'sini yok sayar; `AUTOMATIC_PROXY`'ye gecis kanit olmadan yapilmadi (herkese WPAD gecikmesi) → yalnizca log 12029/12002 + `kullanici proxy` dolu gosterirse v0.3.13; `Diagnostics()` proxy dizesini aynen yazar (`user:pass@host` olsa loga girer — nadir, `@` oncesi maskeleme v0.3.13); 87 ipucu anahtari suclar (tek degisken baslik); sanitize yalnizca uclari temizler, icerdeki karakter rapor edilir. Rapor KAPANMADI: arkadas guncelleyip 1 soru sorup uc satiri (`Ortam:`, `API anahtari:`, `[HTTP]`) gonderecek; kod 87 ise anahtari silip yeniden yapistirmasi yeter
 
+**v0.3.13 (13 Eylul 2026) — Bozuk IPv6 yolu: WinHTTP hizli IPv4 geri donusu + baglanma zaman asimi 10 s:**
+- v0.3.12 tanilamasi ilk saha sonucunu verdi: ayni kullanicida mesaj "kod 12002: zaman asimi". Ayirici test (Windows'un kendi `curl.exe`'si): `-4` → 404 aninda, `-6` → sessizlik → makinede IPv6 adresi var, yol olu (SYN kara delik). DNS kontrolu (13 Eylul): generativelanguage.googleapis.com 8 A + 8 AAAA; github.com / objects.githubusercontent.com / api.guildwars2.com / wiki.guildwars2.com yalnizca A → oyun, Nexus guncellemesi ve tarayici (Happy Eyeballs) calisirken yalnizca Gemini cagrisi IPv6'yi 45 s bekleyip 12002 aliyordu. "Herkeste calisiyor, onda calismiyor" tablosunun tam aciklamasi
+- HttpClient: oturumda `WINHTTP_OPTION_IPV6_FAST_FALLBACK` (SDK basliginda 140, Win 8.1+; IPv6 300 ms'de baglanmazsa IPv4 paralel), `IPv6FastFallback()`; `TimeoutsFor(budget)` = resolve/connect min(budget, 10 s), send/receive budget (POST baglanma 45→10 s; GET 10 s ve wiki HTML 25 s alma degismedi); `Diagnostics()` sonuna "| IPv6 hizli geri donus: acik|desteklenmiyor (kod)"; `TurkishHint(12002)` bozuk IPv6'yi sayar; entry v0.3.13
+- Derleme dersi: `std::min` Windows.h `min` makrosuna carpti — MSBuild (`ConformanceMode` = /permissive-) hata verdi, test derlemesi (/permissive- yok) gecti ve yesil kosmustu. Ucl u operatorle cozuldu; test derleme satirlarina `/permissive-` eklendi (CLAUDE.md). vcxproj'a NOMINMAX ayri karar
+- Testler: test_wiki J once KIRMIZI (TimeoutsFor/IPv6FastFallback yok), sonra A–J yesil (Diagnostics: "... | IPv6 hizli geri donus: acik"); test_gemini -1/-1b/0–9 Lite yesil (TEST 9 canli: 30 s → 192 s). Durust sinir: gelistirme makinesinde IPv6 yok (`curl -6` "Could not resolve host") → duzeltmenin etkisi burada gozlemlenemez; dogrulama etkilenen kullanicinin guncelleme sonrasi ilk sorusu + logda "acik"
+- Kalan belirsizlik: kullanicinin `curl -6` satirinin tam metni ("(28) timed out" = olu yol, duzeltme kapsar; "Could not resolve host" = IPv6 hic yok, sebep baska) ve `[HTTP]` satiri (asama + ms) aynen alinmadi — istendi. Hala 12002 ise process-ici supheliler: oyun trafigini tunelleyen ping dusurucu (ExitLag/WTFast/NoPing — curl oyun process'i disinda calisir, onu gormez), guvenlik duvarinda Gw2-64.exe kurali
+- Kullanici tarafi kalici cozum: adaptorde IPv6'yi kapatmak (geri alinabilir) veya router IPv6 ayari — ayni olu yol IPv6 kullanan diger programlari da yavaslatir
+
 **Faz 2 kalan (ertelenmis / kosullu):**
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
 - "Neden turuncu" tooltip'i (kota mi, anlik 429 mu) — kucuk UI isi
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
 - `Diagnostics()` proxy dizesinde `user:pass@` maskeleme — `Ortam:` satirinda herhangi bir proxy gorulurse
+- vcxproj'a `NOMINMAX` (Windows.h min/max makrolari; v0.3.13'te `std::min` MSBuild'de patladi) — kucuk, ayri commit
 - `model_chain` icin Options UI yok — eski kurulumlarda (arkadas, v0.3.0) Lite-once zincir config.json'da kalici; elle duzenleme veya UI
 - Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
