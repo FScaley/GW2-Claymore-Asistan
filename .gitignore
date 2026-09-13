@@ -1,0 +1,20 @@
+build/
+*.dll
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.suo
+*.user
+*.ncb
+*.sdf
+*.opensdf
+.vs/
+Debug/
+Release/
+x64/
+*.tmp
+
+# Sensitive — NEVER commit
+config.json
