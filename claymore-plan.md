@@ -47,11 +47,18 @@ Detaylar: `faz0-rapor.md`
 2. AddonOptions keystroke restart sorunu (Kaydet butonu), SetKeyboardFocusHere fix
 3. Google Search grounding free tier'da calismaz — grounding kapatildi, 429'da fallback kaldirildi (rate limit tum key icin gecerli)
 
+**v0.1.1 (13 Eylul 2026):**
+- RenderFormattedText: word-flow renderer — **bold** altin, [&chatlink] cyan tiklanabilir
+- PushID cakismasi duzeltildi, post-build path duzeltildi
+- Nexus auto-update: UP_GitHub + UpdateLink
+
 **Bilinen limitler:**
-- Markdown render yok (duz metin)
+- Tam markdown render yok (sadece **bold** + [&chatlink] — imgui_markdown Faz 2'de)
 - Function calling yok (Gemini kendi bilgisiyle cevap verir)
 - Turkce ğ/ş/ı karakterleri ? olarak gorunebilir (font sorunu)
 - Addon unload 45s'ye kadar bekleyebilir (in-flight Gemini cagrisi)
+- ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
+- model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
 ### Faz 2: Akilli Veri Entegrasyonu — BEKLIYOR
 
@@ -120,5 +127,6 @@ Detaylar: `faz0-rapor.md`
 - Eski modeller (2.5): yeni kullanicilara kapali
 - Key format: AQ. prefix gecerli
 - Response parse: steps[].content[].text (type=="model_output")
-- 429'da fallback YAPMA (rate limit tum key icin)
+- 429'da fallback yapilmaz (her deneme kotayi tuketir)
+- Faz 2: model_tier=="paid" → Pro model + grounding tools aktif
 - 500/503'te fallback model dene
