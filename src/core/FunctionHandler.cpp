@@ -15,6 +15,8 @@ FunctionResult FunctionHandler::Handle(const FunctionCall& call) {
         result.resultText = HandleItemInfo(call.arguments);
     else if (call.name == "gw2_recipe")
         result.resultText = HandleRecipe(call.arguments);
+    else if (call.name == "gw2_map")
+        result.resultText = HandleMap(call.arguments);
     else if (call.name == "gw2_wiki")
         result.resultText = HandleWiki(call.arguments);
     else
@@ -60,8 +62,24 @@ json FunctionHandler::GetToolDefinitions() {
 
     tools.push_back({
         {"type", "function"},
+        {"name", "gw2_map"},
+        {"description", "Get GW2 map info with all waypoints and their REAL chat_link codes. Use this whenever the user asks about a location, waypoint, or map. Returns verified waypoint codes that work in-game."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Map name in English (e.g. 'Queensdale', 'Kessex Hills', 'Verdant Brink')"}
+                }}
+            }},
+            {"required", json::array({"name"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
         {"name", "gw2_wiki"},
-        {"description", "Search the GW2 Wiki and return page content. Use for NPC locations, event info, achievement guides, and general game knowledge not covered by other tools."},
+        {"description", "Search the GW2 Wiki and return page content. Use for NPC locations, event info, achievement guides, and general game knowledge not covered by other tools. Do NOT use this for waypoint codes - use gw2_map instead."},
         {"parameters", {
             {"type", "object"},
             {"properties", {
@@ -97,6 +115,57 @@ int FunctionHandler::ResolveItemId(const std::string& name) {
         }
     }
     return 0;
+}
+
+int FunctionHandler::ResolveMapId(const std::string& name) {
+    auto results = m_gw2->WikiSearch(name, 5);
+    if (results.empty()) return 0;
+
+    for (auto& r : results) {
+        auto page = m_gw2->WikiGetPage(r.title);
+        if (!page.found) continue;
+
+        bool isMapPage = page.wikitext.find("Location infobox") != std::string::npos
+                      || page.wikitext.find("location infobox") != std::string::npos;
+        if (!isMapPage) continue;
+
+        std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
+        if (!idStr.empty())
+            return std::stoi(idStr);
+    }
+    return 0;
+}
+
+std::string FunctionHandler::HandleMap(const json& args) {
+    std::string name = args.value("name", "");
+    if (name.empty()) return "{\"error\": \"name parameter required\"}";
+
+    int mapId = ResolveMapId(name);
+    if (mapId <= 0)
+        return "{\"error\": \"Map not found: " + name + "\"}";
+
+    auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
+    if (!mapInfo.found)
+        return "{\"error\": \"Map ID " + std::to_string(mapId) + " not found in API\"}";
+
+    json result;
+    result["map_id"] = mapInfo.id;
+    result["name"] = mapInfo.name;
+    result["level_range"] = std::to_string(mapInfo.minLevel) + "-" + std::to_string(mapInfo.maxLevel);
+    result["region"] = mapInfo.regionName;
+    result["continent"] = mapInfo.continentName;
+
+    json waypoints = json::array();
+    for (auto& wp : mapInfo.waypoints) {
+        json w;
+        w["name"] = wp.name;
+        w["chat_link"] = wp.chatLink;
+        waypoints.push_back(w);
+    }
+    result["waypoints"] = waypoints;
+    result["waypoint_count"] = mapInfo.waypoints.size();
+
+    return result.dump();
 }
 
 std::string FunctionHandler::HandleItemInfo(const json& args) {

@@ -27,9 +27,11 @@ public:
 private:
     std::string HandleItemInfo(const nlohmann::json& args);
     std::string HandleRecipe(const nlohmann::json& args);
+    std::string HandleMap(const nlohmann::json& args);
     std::string HandleWiki(const nlohmann::json& args);
 
     int ResolveItemId(const std::string& name);
+    int ResolveMapId(const std::string& name);
     std::string TruncateWikitext(const std::string& wikitext, size_t maxBytes = 4096);
 
     GW2Client* m_gw2;

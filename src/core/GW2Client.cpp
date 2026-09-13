@@ -165,6 +165,62 @@ GW2Recipe GW2Client::GetRecipe(int id) {
     return {};
 }
 
+GW2MapInfo GW2Client::GetMap(int id) {
+    std::string path = "/v2/maps?ids=" + std::to_string(id);
+    auto resp = m_http.Get(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return {};
+
+    try {
+        auto arr = json::parse(resp->body);
+        if (arr.empty()) return {};
+        auto& j = arr[0];
+
+        GW2MapInfo m;
+        m.found = true;
+        m.id = j.value("id", 0);
+        m.name = j.value("name", "");
+        m.minLevel = j.value("min_level", 0);
+        m.maxLevel = j.value("max_level", 0);
+        m.regionId = j.value("region_id", 0);
+        m.regionName = j.value("region_name", "");
+        m.continentId = j.value("continent_id", 0);
+        m.continentName = j.value("continent_name", "");
+        return m;
+    } catch (...) {}
+    return {};
+}
+
+GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
+    auto mapInfo = GetMap(mapId);
+    if (!mapInfo.found || mapInfo.continentId == 0 || mapInfo.regionId == 0)
+        return mapInfo;
+
+    std::string path = "/v2/continents/" + std::to_string(mapInfo.continentId)
+                     + "/floors/1/regions/" + std::to_string(mapInfo.regionId)
+                     + "/maps/" + std::to_string(mapId);
+    auto resp = m_http.Get(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return mapInfo;
+
+    try {
+        auto j = json::parse(resp->body);
+        if (j.contains("points_of_interest") && j["points_of_interest"].is_object()) {
+            for (auto& [key, poi] : j["points_of_interest"].items()) {
+                std::string poiType = poi.value("type", "");
+                if (poiType != "waypoint") continue;
+
+                GW2Waypoint wp;
+                wp.name = poi.value("name", "");
+                wp.chatLink = poi.value("chat_link", "");
+                wp.floor = poi.value("floor", 0);
+                if (!wp.name.empty() && !wp.chatLink.empty())
+                    mapInfo.waypoints.push_back(std::move(wp));
+            }
+        }
+    } catch (...) {}
+
+    return mapInfo;
+}
+
 std::vector<int> GW2Client::SearchRecipesByOutput(int outputItemId) {
     std::vector<int> result;
     std::string path = "/v2/recipes/search?output=" + std::to_string(outputItemId);

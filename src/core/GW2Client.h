@@ -43,6 +43,25 @@ struct GW2Recipe {
     bool found = false;
 };
 
+struct GW2Waypoint {
+    std::string name;
+    std::string chatLink;
+    int floor = 0;
+};
+
+struct GW2MapInfo {
+    int id = 0;
+    std::string name;
+    int minLevel = 0;
+    int maxLevel = 0;
+    int regionId = 0;
+    std::string regionName;
+    int continentId = 0;
+    std::string continentName;
+    std::vector<GW2Waypoint> waypoints;
+    bool found = false;
+};
+
 struct WikiSearchResult {
     std::string title;
     std::string url;
@@ -64,6 +83,9 @@ public:
 
     GW2Recipe GetRecipe(int id);
     std::vector<int> SearchRecipesByOutput(int outputItemId);
+
+    GW2MapInfo GetMap(int id);
+    GW2MapInfo GetMapWithWaypoints(int mapId);
 
     std::vector<WikiSearchResult> WikiSearch(const std::string& query, int limit = 5);
     WikiPage WikiGetPage(const std::string& title);
