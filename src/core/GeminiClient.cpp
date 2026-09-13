@@ -45,7 +45,7 @@ std::vector<ModelCooldown> GeminiClient::GetCooldowns() const {
             int remaining = static_cast<int>(
                 std::chrono::duration_cast<std::chrono::seconds>(
                     m_cooldowns[i].until - now).count());
-            result.push_back({m_chain[i], m_cooldowns[i].until, remaining});
+            result.push_back({m_chain[i], m_cooldowns[i].until, remaining, m_cooldowns[i].streak});
         }
     }
     return result;
@@ -158,6 +158,17 @@ GeminiResponse GeminiClient::DoRequest(const std::string& model,
     return ParseResponse(resp->body, resp->statusCode, model);
 }
 
+// A burst 429 costs one short skip; a model that answers 429 on every real attempt (the free
+// tier's daily Flash quota, observed 13 Sep 2026) is left alone for up to half an hour instead
+// of charging every question a wasted request plus ~1 s. Requests skipped during a cooldown
+// are not attempts, so they never escalate - the curve is the same for per-minute and per-day
+// quotas, which is why the 429 body's missing quotaId does not matter.
+int GeminiClient::EscalatedCooldown(int retrySeconds, int streak) {
+    int secs = std::max(retrySeconds, 30);
+    for (int k = 1; k < streak && secs < 1800; ++k) secs *= 4;
+    return std::min(secs, 1800);
+}
+
 GeminiResponse GeminiClient::Ask(const std::string& question,
                                  const std::string& systemPrompt,
                                  const std::string& prevInteractionId,
@@ -194,15 +205,18 @@ GeminiResponse GeminiClient::Ask(const std::string& question,
         auto result = DoRequest(m_chain[i], body.dump());
 
         if (result.ok || result.RequiresAction()) {
+            m_cooldowns[i].streak = 0;
             result.fallbackUsed = (i > 0);
             return result;
         }
 
         if (result.statusCode == 429) {
-            int secs = result.retrySeconds > 0 ? result.retrySeconds : 30;
+            int streak = ++m_cooldowns[i].streak;
+            int secs = EscalatedCooldown(result.retrySeconds, streak);
             m_cooldowns[i].until = std::chrono::steady_clock::now() + std::chrono::seconds(secs);
             m_cooldowns[i].waitSeconds = secs;
-            Log("Cooldown: " + m_chain[i] + " = " + std::to_string(secs) + "s");
+            Log("Cooldown: " + m_chain[i] + " = " + std::to_string(secs) + "s (" + std::to_string(streak)
+                + ". ardisik 429" + (streak >= 3 ? " - gunluk kota olabilir" : "") + ")");
             lastResult = result;
             continue;
         }
@@ -277,12 +291,19 @@ GeminiResponse GeminiClient::SendFunctionResults(
             auto it = std::find(m_chain.begin(), m_chain.end(), model);
             if (it != m_chain.end()) {
                 size_t i = it - m_chain.begin();
-                int cdSecs = result.retrySeconds > 0 ? result.retrySeconds : 30;
+                int streak = ++m_cooldowns[i].streak;
+                int cdSecs = EscalatedCooldown(result.retrySeconds, streak);
                 m_cooldowns[i].until = std::chrono::steady_clock::now() + std::chrono::seconds(cdSecs);
                 m_cooldowns[i].waitSeconds = cdSecs;
-                Log("Cooldown: " + model + " = " + std::to_string(cdSecs) + "s (FC)");
+                Log("Cooldown: " + model + " = " + std::to_string(cdSecs) + "s (FC, " + std::to_string(streak)
+                    + ". ardisik 429" + (streak >= 3 ? " - gunluk kota olabilir" : "") + ")");
             }
         }
+    }
+
+    if (result.ok || result.RequiresAction()) {
+        auto it = std::find(m_chain.begin(), m_chain.end(), model);
+        if (it != m_chain.end()) m_cooldowns[it - m_chain.begin()].streak = 0;
     }
 
     return result;

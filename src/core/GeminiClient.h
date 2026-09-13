@@ -31,6 +31,7 @@ struct ModelCooldown {
     std::string model;
     std::chrono::steady_clock::time_point until;
     int waitSeconds = 0;
+    int streak = 0;          // consecutive 429s from real attempts, no success in between
 };
 
 class GeminiClient {
@@ -62,6 +63,10 @@ public:
     std::vector<ModelCooldown> GetCooldowns() const;
     int GetShortestWait() const;
 
+    // Cooldown length for the k-th consecutive 429 of a model: max(retry, 30 s) x 4^(k-1), capped at
+    // 30 min (30 s -> 2 min -> 8 min -> 30 min). Pure function, unit-tested in test_gemini.
+    static int EscalatedCooldown(int retrySeconds, int streak);
+
     static constexpr const char* API_HOST = "generativelanguage.googleapis.com";
 
     static const std::vector<std::string> DEFAULT_CHAIN;
@@ -83,6 +88,7 @@ private:
     struct CooldownEntry {
         std::chrono::steady_clock::time_point until;
         int waitSeconds = 0;
+        int streak = 0;      // grows only on a real attempt that 429s; reset by any success
     };
     std::vector<CooldownEntry> m_cooldowns;
 

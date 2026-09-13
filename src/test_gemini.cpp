@@ -15,7 +15,25 @@ static const char* SYSTEM_PROMPT =
     "- Kisa ve oz cevaplar ver.\n"
     "- Item fiyati, crafting tarifi veya wiki bilgisi gerektiginde uygun tool'u kullan.";
 
-int main() {
+int main(int argc, char** argv) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
+    printf("=== TEST -1: 429 cooldown escalation (pure math, no network) ===\n");
+    {
+        struct Case { int retry; int streak; int expect; };
+        const Case cases[] = {{22, 1, 30}, {22, 2, 120}, {22, 3, 480}, {22, 4, 1800}, {22, 5, 1800},
+                              {52, 1, 52}, {52, 2, 208}, {52, 3, 832}, {52, 4, 1800},
+                              {0, 1, 30}, {5, 2, 120}};
+        int bad = 0;
+        for (auto& c : cases) {
+            int got = GeminiClient::EscalatedCooldown(c.retry, c.streak);
+            printf("  [%s] retry=%d streak=%d -> %d (expect %d)\n",
+                   got == c.expect ? "OK" : "FAIL", c.retry, c.streak, got, c.expect);
+            if (got != c.expect) bad++;
+        }
+        if (bad) { printf("FAIL: escalation math (%d)\n", bad); return 1; }
+    }
+
     ConfigManager config;
     if (!config.Load("E:\\Guild Wars 2\\addons\\claymore-asistan\\config.json")) {
         printf("FAIL: config yuklenemedi\n");
@@ -23,12 +41,22 @@ int main() {
     }
 
     auto& chain = config.GetModelChain();
-    printf("Config OK: model_chain=[");
+    printf("\nConfig model_chain=[");
     for (size_t i = 0; i < chain.size(); ++i) {
         if (i > 0) printf(", ");
         printf("%s", chain[i].c_str());
     }
     printf("]\n");
+
+    // A run costs ~6 Flash attempts = a third of a free key's DAILY Flash quota (limit: 20 is per day).
+    // Default to Lite-first so testing does not eat the user's Flash; pass --flash to use the config chain.
+    bool useFlash = argc > 1 && std::string(argv[1]) == "--flash";
+    if (!useFlash) {
+        config.SetModelChain({"gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"});
+        printf("Test chain: Lite-first (results below are LITE results; pass --flash for the config chain)\n");
+    } else {
+        printf("Test chain: config chain (--flash)\n");
+    }
 
     printf("\n=== TEST 0: GW2 API + Fiyat Formatlama ===\n");
     {
@@ -140,7 +168,7 @@ int main() {
         printf("Aktif cooldown yok (iyi)\n");
     } else {
         for (auto& cd : cds)
-            printf("Cooldown: %s = %d sn\n", cd.model.c_str(), cd.waitSeconds);
+            printf("Cooldown: %s = %d sn (streak %d)\n", cd.model.c_str(), cd.waitSeconds, cd.streak);
     }
 
     printf("\n=== TEST 5: Waypoint FC loop (Worker) ===\n");
@@ -269,6 +297,28 @@ int main() {
                all.find("Writ of Renown") != std::string::npos,
                all.find("Renown Token") != std::string::npos,
                (all.find("bulunamadi") != std::string::npos || all.find("bulunamadı") != std::string::npos));
+    }
+
+    printf("\n=== TEST 9: consecutive 429 -> escalating cooldown (observational) ===\n");
+    {
+        // Flash-first on purpose: two real attempts 31 s apart. While the daily Flash quota is
+        // exhausted this must log 30s (1. ardisik) then 120s (2. ardisik); with a healthy Flash the
+        // streak simply stays 0. Costs two Flash attempts (429s) + two Lite calls.
+        GeminiClient g2;
+        g2.SetApiKey(config.GetApiKey());
+        g2.SetModelChain({"gemini-3.5-flash", "gemini-3.5-flash-lite"});
+        g2.SetLogger([](const std::string& m) { printf("  [LOG] %s\n", m.c_str()); });
+        for (int round = 1; round <= 2; ++round) {
+            auto r = g2.Ask("Reply with the single word OK.", "");
+            printf("round %d: ok=%d model=%s fallback=%d\n", round, r.ok, r.activeModel.c_str(), r.fallbackUsed);
+            for (auto& cd : g2.GetCooldowns())
+                printf("  cooldown %s = %d sn (streak %d)\n", cd.model.c_str(), cd.waitSeconds, cd.streak);
+            if (round == 1) {
+                printf("  (31 s bekleniyor: ilk cooldown dolsun, ikinci GERCEK deneme streak'i 2 yapsin)\n");
+                std::this_thread::sleep_for(std::chrono::seconds(31));
+            }
+        }
+        printf("expected: Flash exhausted -> 30s (1.) then 120s (2.); Flash healthy -> no cooldown lines\n");
     }
 
     printf("\n=== TUMU GECTI ===\n");
