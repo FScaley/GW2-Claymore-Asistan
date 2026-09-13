@@ -276,3 +276,22 @@ WikiPage GW2Client::WikiGetPage(const std::string& title) {
     } catch (...) {}
     return {};
 }
+
+WikiPage GW2Client::WikiGetPageHtml(const std::string& title) {
+    std::string path = "/api.php?action=parse&page=" + UrlEncode(title)
+                     + "&prop=text&disabletoc=1&disableeditsection=1&format=json";
+    auto resp = m_http.Get(WIKI_HOST, path, 25000);
+    if (!resp || resp->statusCode != 200) return {};
+
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("parse")) return {};
+        WikiPage page;
+        page.found = true;
+        page.title = j["parse"].value("title", title);
+        if (j["parse"].contains("text") && j["parse"]["text"].contains("*"))
+            page.html = j["parse"]["text"]["*"].get<std::string>();
+        return page;
+    } catch (...) {}
+    return {};
+}

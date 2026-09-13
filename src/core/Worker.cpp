@@ -15,6 +15,8 @@ const std::string Worker::SYSTEM_PROMPT =
     "\n"
     "WAYPOINT RULE: NEVER generate [&...] codes yourself. Only use chat_link values from tool results. If no tool provides a code, say the code is not available.\n"
     "\n"
+    "COLLECTION RULE: For mounts, legendaries, collections, achievements: the gw2_wiki result includes 'sub_collections' with complete item lists. List EVERY item from EVERY sub-collection, verbatim. For each item, use ONLY its 'hint' text (translate to Turkish) - NEVER substitute or add locations, NPCs, or quantities from memory. If a sub-collection you need is missing, call gw2_wiki with its exact name. NEVER add, remove, or rename items from memory. If the result has a 'sections' list and you need a section not included, call gw2_wiki again with the 'section' parameter.\n"
+    "\n"
     "RESPONSE FORMAT:\n"
     "- Reply in Turkish. Keep item/NPC/map names in English.\n"
     "- Prices in gold/silver/copper (g/s/c).\n"
@@ -181,12 +183,14 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
             call.id = fc.id;
             call.name = fc.name;
             call.arguments = fc.arguments;
-            auto result = m_funcHandler->Handle(call);
+            auto result = m_funcHandler->Handle(call,
+                [this, gen] { return !IsGenerationCurrent(gen); });
 
             auto logger = m_gemini.GetLogger();
             if (logger) {
                 std::string preview = result.resultText.substr(0, 120);
-                logger("FC " + fc.name + " " + fc.arguments.dump() + " -> " + preview);
+                logger("FC " + fc.name + " " + fc.arguments.dump() + " -> ("
+                       + std::to_string(result.resultText.size()) + "B) " + preview);
             }
 
             auto links = ExtractChatLinks(result.resultText);

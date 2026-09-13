@@ -1,24 +1,41 @@
 #include "FunctionHandler.h"
+#include "WikiText.h"
 #include <algorithm>
+#include <cctype>
 
 using json = nlohmann::json;
+
+static const char* CANCELLED_JSON = "{\"error\": \"cancelled by user\"}";
+
+static std::string TrimStr(const std::string& s) {
+    size_t a = 0, b = s.size();
+    while (a < b && std::isspace((unsigned char)s[a])) ++a;
+    while (b > a && std::isspace((unsigned char)s[b - 1])) --b;
+    return s.substr(a, b - a);
+}
+
+static std::string LowerStr(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
 
 FunctionHandler::FunctionHandler(GW2Client* gw2, ItemIndex* index)
     : m_gw2(gw2), m_index(index) {}
 
-FunctionResult FunctionHandler::Handle(const FunctionCall& call) {
+FunctionResult FunctionHandler::Handle(const FunctionCall& call, CancelCheck shouldCancel) {
     FunctionResult result;
     result.callId = call.id;
     result.name = call.name;
 
     if (call.name == "gw2_item_info")
-        result.resultText = HandleItemInfo(call.arguments);
+        result.resultText = HandleItemInfo(call.arguments, shouldCancel);
     else if (call.name == "gw2_recipe")
-        result.resultText = HandleRecipe(call.arguments);
+        result.resultText = HandleRecipe(call.arguments, shouldCancel);
     else if (call.name == "gw2_map")
-        result.resultText = HandleMap(call.arguments);
+        result.resultText = HandleMap(call.arguments, shouldCancel);
     else if (call.name == "gw2_wiki")
-        result.resultText = HandleWiki(call.arguments);
+        result.resultText = HandleWiki(call.arguments, shouldCancel);
     else
         result.resultText = "{\"error\": \"Unknown function: " + call.name + "\"}";
 
@@ -79,13 +96,17 @@ json FunctionHandler::GetToolDefinitions() {
     tools.push_back({
         {"type", "function"},
         {"name", "gw2_wiki"},
-        {"description", "Search the GW2 Wiki and return page content. Use for NPC locations, event info, achievement guides, and general game knowledge not covered by other tools. Do NOT use this for waypoint codes - use gw2_map instead."},
+        {"description", "Search the GW2 Wiki and return the page as readable text plus a 'sections' list. For mounts, legendaries, collections and achievements the result also includes 'sub_collections': the COMPLETE item list of every linked collection, extracted directly from the wiki tables — always relay those lists verbatim. If the page itself is a collection, its items are in 'items'. Pass 'section' (a name from the 'sections' list) to fetch one specific section in full when the default content was truncated. Do NOT use this for waypoint codes - use gw2_map instead."},
         {"parameters", {
             {"type", "object"},
             {"properties", {
                 {"query", {
                     {"type", "string"},
-                    {"description", "Search query in English (e.g. 'Miyani', 'Shadow Behemoth', 'Ascended armor')"}
+                    {"description", "Page name or search query in English (e.g. 'Roller Beetle', 'Miyani', 'Shadow Behemoth')"}
+                }},
+                {"section", {
+                    {"type", "string"},
+                    {"description", "Optional. Exact section title from a previous result's 'sections' list (e.g. 'Unlocking', 'Acquisition') to fetch that section in full."}
                 }}
             }},
             {"required", json::array({"query"})}
@@ -143,7 +164,7 @@ int FunctionHandler::ResolveMapId(const std::string& name) {
     return 0;
 }
 
-std::string FunctionHandler::HandleMap(const json& args) {
+std::string FunctionHandler::HandleMap(const json& args, const CancelCheck& cancel) {
     std::string name = args.value("name", "");
     if (name.empty()) return "{\"error\": \"name parameter required\"}";
 
@@ -175,11 +196,12 @@ std::string FunctionHandler::HandleMap(const json& args) {
     return result.dump();
 }
 
-std::string FunctionHandler::HandleItemInfo(const json& args) {
+std::string FunctionHandler::HandleItemInfo(const json& args, const CancelCheck& cancel) {
     std::string name = args.value("name", "");
     if (name.empty()) return "{\"error\": \"name parameter required\"}";
 
     int itemId = ResolveItemId(name);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     if (itemId <= 0)
         return "{\"error\": \"Item not found: " + name + "\"}";
 
@@ -214,11 +236,12 @@ std::string FunctionHandler::HandleItemInfo(const json& args) {
     return result.dump();
 }
 
-std::string FunctionHandler::HandleRecipe(const json& args) {
+std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& cancel) {
     std::string name = args.value("name", "");
     if (name.empty()) return "{\"error\": \"name parameter required\"}";
 
     int itemId = ResolveItemId(name);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     if (itemId <= 0)
         return "{\"error\": \"Item not found: " + name + "\"}";
 
@@ -287,32 +310,117 @@ std::string FunctionHandler::HandleRecipe(const json& args) {
     return result.dump();
 }
 
-std::string FunctionHandler::HandleWiki(const json& args) {
+json FunctionHandler::ExtractCollectionItems(const std::string& html) {
+    json items = json::array();
+    auto rows = WikiText::ExtractTableRows(html, "mech1");
+    for (auto& row : rows) {
+        if (row.cells.size() < 2) continue;
+        const std::string& first = row.cells[0];
+        bool numeric = !first.empty() &&
+            std::all_of(first.begin(), first.end(), [](unsigned char c) { return std::isdigit(c); });
+        if (!numeric) continue;
+
+        json item;
+        item["name"] = row.cells[1];
+        std::string hint;
+        for (size_t i = row.cells.size(); i-- > 2;) {
+            if (row.cells[i].rfind("Hint:", 0) == 0) {
+                hint = TrimStr(row.cells[i].substr(5));
+                break;
+            }
+        }
+        if (!hint.empty()) item["hint"] = hint;
+        items.push_back(item);
+    }
+    return items;
+}
+
+std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& cancel) {
     std::string query = args.value("query", "");
+    std::string sectionWanted = TrimStr(args.value("section", ""));
     if (query.empty()) return "{\"error\": \"query parameter required\"}";
 
     auto results = m_gw2->WikiSearch(query, 3);
     if (results.empty())
         return "{\"error\": \"No wiki results for: " + query + "\"}";
+    if (Cancelled(cancel)) return CANCELLED_JSON;
 
-    auto page = m_gw2->WikiGetPage(results[0].title);
-    if (!page.found)
-        return "{\"error\": \"Wiki page not found: " + results[0].title + "\"}";
+    std::string title = results[0].title;
+    auto wikiPage = m_gw2->WikiGetPage(title);
+    if (!wikiPage.found)
+        return "{\"error\": \"Wiki page not found: " + title + "\"}";
 
-    if (page.wikitext.substr(0, 9) == "#REDIRECT") {
-        auto lb = page.wikitext.find("[[");
-        auto rb = page.wikitext.find("]]");
+    if (wikiPage.wikitext.rfind("#REDIRECT", 0) == 0) {
+        auto lb = wikiPage.wikitext.find("[[");
+        auto rb = wikiPage.wikitext.find("]]");
         if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
-            std::string target = page.wikitext.substr(lb + 2, rb - lb - 2);
+            std::string target = wikiPage.wikitext.substr(lb + 2, rb - lb - 2);
+            auto hash = target.find('#');
+            if (hash != std::string::npos) target = target.substr(0, hash);
             auto redirected = m_gw2->WikiGetPage(target);
-            if (redirected.found) page = redirected;
+            if (redirected.found) { wikiPage = redirected; title = redirected.title; }
         }
     }
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    auto htmlPage = m_gw2->WikiGetPageHtml(title);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
 
     json result;
-    result["title"] = page.title;
-    result["url"] = results[0].url;
-    result["content"] = TruncateWikitext(page.wikitext);
+    result["title"] = wikiPage.title;
+    result["url"] = "https://wiki.guildwars2.com/wiki/" + wikiPage.title;
+
+    std::string content;
+    json sectionNames = json::array();
+
+    if (htmlPage.found && !htmlPage.html.empty()) {
+        std::string text = WikiText::HtmlToText(htmlPage.html);
+        std::vector<WikiSection> sections;
+        std::string lead = WikiText::SplitLead(text, sections);
+        for (auto& s : sections) sectionNames.push_back(s.title);
+
+        if (!sectionWanted.empty()) {
+            std::string want = LowerStr(sectionWanted);
+            for (auto& s : sections) {
+                if (LowerStr(s.title) == want) {
+                    content = "## " + s.title + "\n" + s.body;
+                    if (content.size() > WIKI_TEXT_BUDGET)
+                        content = content.substr(0, WIKI_TEXT_BUDGET) + "\n... (truncated)";
+                    result["section"] = s.title;
+                    break;
+                }
+            }
+            if (content.empty())
+                result["section_error"] = "Section not found: " + sectionWanted;
+        }
+
+        if (content.empty()) {
+            content = lead;
+            for (auto& s : sections) {
+                if (content.size() >= WIKI_TEXT_BUDGET) break;
+                std::string chunk = "\n\n## " + s.title + "\n" + s.body;
+                if (content.size() + chunk.size() > WIKI_TEXT_BUDGET) {
+                    size_t room = WIKI_TEXT_BUDGET - content.size();
+                    content += chunk.substr(0, room);
+                    content += "\n... (truncated - call gw2_wiki with section='" + s.title + "' for the rest)";
+                    break;
+                }
+                content += chunk;
+            }
+        }
+
+        auto ownItems = ExtractCollectionItems(htmlPage.html);
+        if (!ownItems.empty()) {
+            result["items"] = ownItems;
+            result["item_count"] = ownItems.size();
+        }
+    } else {
+        content = wikiPage.wikitext.substr(0, WIKI_TEXT_BUDGET);
+        result["content_source"] = "wikitext_fallback";
+    }
+
+    result["content"] = content;
+    if (!sectionNames.empty()) result["sections"] = sectionNames;
 
     if (results.size() > 1) {
         json related = json::array();
@@ -321,17 +429,35 @@ std::string FunctionHandler::HandleWiki(const json& args) {
         result["related"] = related;
     }
 
-    std::string idStr = GW2Client::ExtractItemIdFromWikitext(page.wikitext);
+    std::string idStr = GW2Client::ExtractItemIdFromWikitext(wikiPage.wikitext);
     if (!idStr.empty()) {
         int id = std::stoi(idStr);
         result["item_id"] = id;
-        m_index->Add(page.title, id);
+        m_index->Add(wikiPage.title, id);
     }
 
+    auto subNames = WikiText::ExtractSubCollectionNames(wikiPage.wikitext, WIKI_SUBPAGE_CAP);
+    json subs = json::array();
+    std::string selfLower = LowerStr(wikiPage.title);
+    for (auto& name : subNames) {
+        if (Cancelled(cancel)) return CANCELLED_JSON;
+        if (LowerStr(name) == selfLower) continue;
+        auto sub = m_gw2->WikiGetPageHtml(name);
+        if (!sub.found || sub.html.empty()) continue;
+        auto items = ExtractCollectionItems(sub.html);
+        if (items.empty()) continue;
+        json s;
+        s["name"] = sub.title;
+        s["item_count"] = items.size();
+        s["items"] = items;
+        subs.push_back(s);
+    }
+    if (!subs.empty()) result["sub_collections"] = subs;
+
     std::string locationMap;
-    auto firstHeader = page.wikitext.find("\n==");
-    size_t leadEnd = (firstHeader != std::string::npos) ? firstHeader : page.wikitext.size();
-    std::string lead = page.wikitext.substr(0, leadEnd);
+    auto firstHeader = wikiPage.wikitext.find("\n==");
+    size_t leadEnd = (firstHeader != std::string::npos) ? firstHeader : wikiPage.wikitext.size();
+    std::string lead = wikiPage.wikitext.substr(0, leadEnd);
     auto locPos = lead.find("| location");
     if (locPos == std::string::npos) locPos = lead.find("|location");
     if (locPos != std::string::npos) {
@@ -342,7 +468,7 @@ std::string FunctionHandler::HandleWiki(const json& args) {
             auto nl = lead.find('\n', eq);
             if (lb != std::string::npos && rb != std::string::npos && rb > lb
                 && (nl == std::string::npos || lb < nl)) {
-                locationMap = page.wikitext.substr(lb + 2, rb - lb - 2);
+                locationMap = lead.substr(lb + 2, rb - lb - 2);
                 auto pipe = locationMap.find('|');
                 if (pipe != std::string::npos) locationMap = locationMap.substr(0, pipe);
             }
@@ -350,6 +476,7 @@ std::string FunctionHandler::HandleWiki(const json& args) {
     }
 
     if (!locationMap.empty()) {
+        if (Cancelled(cancel)) return CANCELLED_JSON;
         int mapId = ResolveMapId(locationMap);
         if (mapId > 0) {
             auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
@@ -370,39 +497,3 @@ std::string FunctionHandler::HandleWiki(const json& args) {
     return result.dump();
 }
 
-std::string FunctionHandler::TruncateWikitext(const std::string& wikitext, size_t maxBytes) {
-    if (wikitext.size() <= maxBytes) return wikitext;
-
-    std::string result;
-    auto extractSection = [&](const std::string& header) {
-        std::string h2 = "==" + header + "==";
-        std::string h2s = "== " + header + " ==";
-        auto pos = wikitext.find(h2);
-        if (pos == std::string::npos) pos = wikitext.find(h2s);
-        if (pos == std::string::npos) return;
-
-        auto end = wikitext.find("\n==", pos + h2.size());
-        if (end == std::string::npos) end = wikitext.size();
-        std::string section = wikitext.substr(pos, std::min(end - pos, (size_t)1500));
-        if (!section.empty()) {
-            result += "\n" + section + "\n";
-        }
-    };
-
-    auto firstSection = wikitext.find("\n==");
-    if (firstSection == std::string::npos) firstSection = wikitext.size();
-    std::string lead = wikitext.substr(0, std::min(firstSection, (size_t)1500));
-    result = lead;
-
-    extractSection("Location");
-    extractSection("Locations");
-    extractSection("Acquisition");
-    extractSection("Walkthrough");
-    extractSection("Contents");
-    extractSection("Notes");
-
-    if (result.size() > maxBytes)
-        result = result.substr(0, maxBytes) + "\n... (truncated)";
-
-    return result;
-}

@@ -70,6 +70,7 @@ struct WikiSearchResult {
 struct WikiPage {
     std::string title;
     std::string wikitext;
+    std::string html;
     bool found = false;
 };
 
@@ -89,6 +90,7 @@ public:
 
     std::vector<WikiSearchResult> WikiSearch(const std::string& query, int limit = 5);
     WikiPage WikiGetPage(const std::string& title);
+    WikiPage WikiGetPageHtml(const std::string& title);
 
     static std::string FormatPrice(int copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);
