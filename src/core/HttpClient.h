@@ -17,6 +17,17 @@ struct HttpFailure {
     bool Any() const { return !stage.empty(); }
 };
 
+// Per-request WinHTTP time budget. Resolve and connect are capped at 10 s whatever the caller's
+// budget: reaching Google or the GW2 API never legitimately takes longer, and a dead address (a
+// blackholed IPv6 path, a firewall that drops SYNs) should fail fast instead of eating the whole
+// 45 s POST budget before WinHTTP moves to the next address. Send/receive keep the full budget.
+struct HttpTimeouts {
+    int resolve = 0;
+    int connect = 0;
+    int send = 0;
+    int receive = 0;
+};
+
 class HttpClient {
 public:
     HttpClient();
@@ -36,7 +47,10 @@ public:
 
     static std::string DescribeError(unsigned long code);   // Windows' own text for the code (UTF-8), "" if none
     static std::string TurkishHint(unsigned long code);     // one-line user hint for the common codes, "" otherwise
-    static std::string Diagnostics();                       // OS version + WinHTTP/user proxy configuration; no secrets
+    static std::string Diagnostics();                       // OS version + WinHTTP/user proxy configuration + fallback support; no secrets
+
+    static HttpTimeouts TimeoutsFor(int budgetMs);          // pure; unit-tested in test_wiki J
+    bool IPv6FastFallback() const { return m_ipv6FastFallback; }   // session accepted WINHTTP_OPTION_IPV6_FAST_FALLBACK
 
 private:
     std::optional<HttpResponse> Request(const wchar_t* method, const std::string& host,
@@ -46,4 +60,5 @@ private:
 
     void* m_hSession = nullptr; // HINTERNET
     HttpFailure m_lastFailure;
+    bool m_ipv6FastFallback = false;
 };

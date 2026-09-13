@@ -278,6 +278,32 @@ int main() {
         Check(problem.find("FAKE") == std::string::npos, "problem text never echoes the key");
     }
 
+    printf("\n=== J: IPv6 fast fallback + connect timeout cap ===\n");
+    {
+        // Field case (13 Sep 2026, v0.3.12 log): every Gemini call ended in WinHttpSendRequest 12002 after 45 s.
+        // curl -4 -> 404 instantly, curl -6 -> silence: the machine has an IPv6 address but the IPv6 path is dead.
+        // Only Google publishes AAAA records among our hosts (GitHub, api/wiki.guildwars2.com are IPv4-only), which
+        // is why the game, Nexus and the browser (Happy Eyeballs) all worked while the addon alone timed out.
+        auto t = HttpClient::TimeoutsFor(45000);
+        Check(t.resolve == 10000 && t.connect == 10000 && t.send == 45000 && t.receive == 45000,
+              "POST budget 45 s: resolve/connect capped at 10 s, send/receive keep 45 s");
+        t = HttpClient::TimeoutsFor(10000);
+        Check(t.resolve == 10000 && t.connect == 10000 && t.send == 10000 && t.receive == 10000,
+              "GET budget 10 s: unchanged");
+        t = HttpClient::TimeoutsFor(25000);
+        Check(t.connect == 10000 && t.receive == 25000, "wiki HTML budget 25 s: connect 10 s, receive 25 s");
+        t = HttpClient::TimeoutsFor(5000);
+        Check(t.resolve == 5000 && t.connect == 5000, "a budget below the cap is not raised");
+
+        HttpClient http;
+        Check(http.IPv6FastFallback(), "session enables WINHTTP_OPTION_IPV6_FAST_FALLBACK (Windows 8.1+)");
+        std::string diag = HttpClient::Diagnostics();
+        printf("Diagnostics: %s\n", diag.c_str());
+        Check(diag.find("IPv6 hizli geri donus: acik") != std::string::npos, "Diagnostics reports the fallback state");
+        auto ok = http.Get(GW2Client::API_HOST, "/v2/build", 10000);
+        Check(ok.has_value() && ok->statusCode == 200, "GW2 API still answers with the new timeouts");
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }

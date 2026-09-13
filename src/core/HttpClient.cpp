@@ -32,8 +32,33 @@ HttpClient::HttpClient()
                              WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                              WINHTTP_NO_PROXY_NAME,
                              WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!m_hSession)
+    if (!m_hSession) {
         Fail("WinHttpOpen", GetLastError(), 0);
+        return;
+    }
+
+    // Happy Eyeballs: start an IPv4 attempt 300 ms after an IPv6 attempt that has not connected.
+    // Without it a machine that has an IPv6 address but a dead IPv6 path sat out the whole connect
+    // timeout on every Gemini call and got 12002 (a user, 13 Sep 2026: curl -4 -> 404, curl -6 ->
+    // silence). Google is the only host we talk to that publishes AAAA records - GitHub and the GW2
+    // API/wiki are IPv4-only - so the game, Nexus and the browser all worked while the addon alone
+    // timed out. Windows 8.1+; on older systems the call fails and behaviour stays as before.
+    BOOL fastFallback = TRUE;
+    m_ipv6FastFallback = WinHttpSetOption(m_hSession, WINHTTP_OPTION_IPV6_FAST_FALLBACK,
+                                          &fastFallback, sizeof(fastFallback)) != FALSE;
+}
+
+HttpTimeouts HttpClient::TimeoutsFor(int budgetMs)
+{
+    // Plain ternary, not std::min: this TU includes Windows.h and the project does not define
+    // NOMINMAX, so `min(` is a macro here (MSBuild caught it; the test build did not).
+    const int cap = budgetMs < 10000 ? budgetMs : 10000;
+    HttpTimeouts t;
+    t.resolve = cap;
+    t.connect = cap;
+    t.send = budgetMs;
+    t.receive = budgetMs;
+    return t;
 }
 
 HttpClient::~HttpClient()
@@ -105,7 +130,8 @@ std::optional<HttpResponse> HttpClient::Request(const wchar_t* method, const std
         return std::nullopt;
     }
 
-    WinHttpSetTimeouts(hRequest, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+    HttpTimeouts t = TimeoutsFor(timeoutMs);
+    WinHttpSetTimeouts(hRequest, t.resolve, t.connect, t.send, t.receive);
 
     BOOL bResult = WinHttpSendRequest(hRequest,
                                        headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
@@ -189,7 +215,7 @@ std::string HttpClient::TurkishHint(unsigned long code)
         return "istek basligi gecersiz - API anahtarinda ASCII disi veya gorunmez bir karakter olabilir; "
                "Ayarlardan anahtari silip yeniden yapistirin";
     case ERROR_WINHTTP_TIMEOUT:                   // 12002
-        return "zaman asimi - guvenlik duvari veya ag istegi dusuruyor olabilir";
+        return "zaman asimi - bozuk IPv6 yolu, guvenlik duvari veya paketleri dusuren bir ag olabilir";
     case ERROR_WINHTTP_INVALID_URL:               // 12005
     case ERROR_WINHTTP_UNRECOGNIZED_SCHEME:       // 12006
         return "gecersiz adres";
@@ -265,6 +291,19 @@ std::string HttpClient::Diagnostics()
         if (ie.lpszProxyBypass) GlobalFree(ie.lpszProxyBypass);
     } else {
         out += " | kullanici proxy: okunamadi (" + std::to_string(GetLastError()) + ")";
+    }
+
+    // Does this Windows accept the IPv6 fast-fallback option the real sessions set? Same call on a
+    // throwaway session, so the load log says whether the v0.3.13 fix is active on this machine.
+    HINTERNET probe = WinHttpOpen(L"GW2-Claymore-Asistan/diag", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                  WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (probe) {
+        BOOL on = TRUE;
+        if (WinHttpSetOption(probe, WINHTTP_OPTION_IPV6_FAST_FALLBACK, &on, sizeof(on)))
+            out += " | IPv6 hizli geri donus: acik";
+        else
+            out += " | IPv6 hizli geri donus: desteklenmiyor (" + std::to_string(GetLastError()) + ")";
+        WinHttpCloseHandle(probe);
     }
 
     return out;
