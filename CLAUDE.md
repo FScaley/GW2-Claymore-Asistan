@@ -83,7 +83,7 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 - **Response parse:** `steps[]` → `type=="model_output"` → `content[].text` birlestir. `thought` step'leri gosterilmez.
 - **Key format:** `AQ.` prefix gecerli (eski `AIzaSy` bilgisi yanlis).
 - **Eski modeller (2.5):** Yeni kullanicilara kapali (404).
-- **Diagnostics:** 429 aldiginda tam hata mesaji Nexus loguna yazilir (`[429] model: ...`). Bu mesaj hangi limitin asildigini gosterir (RPM/RPD/kota).
+- **Diagnostics:** 429 tam hata mesajı Nexus loguna yazılır (`[429] model: ...`). `APIDefs->Log` thread-safe (mutex korumalı — Nexus source'ta doğrulandı). Worker thread'den güvenle çağrılabilir.
 
 ### UI Theme (gw2pao palette)
 
@@ -100,9 +100,11 @@ cl /EHsc /std:c++17 /I"../include" test_gemini.cpp core/HttpClient.cpp core/Gemi
 
 - No full markdown rendering (basic **bold** + [&chatlink] destegi var, imgui_markdown Faz 2'de)
 - No function calling (Gemini answers from its own knowledge — Faz 2 will add GW2 API tools)
-- Turkish chars (ğ, ş, ı, İ, Ğ, Ş): Fixed in v0.2.1. Segoe UI 16px with Latin Extended-A range (U+0100-U+017F) via `Fonts_AddFromFile`. Static `ImFontConfig` + `g_turkishRanges` (async atlas rebuild gerektirir). `PushFont/PopFont` in AddonRender + AddonOptions.
+- Turkish chars (ğ, ş, ı, İ, Ğ, Ş): `Fonts_AddFromFile` ile Segoe UI 16px, `aConfig=nullptr` (Nexus kendi default ImFontConfig'ini oluşturur). Nexus zaten Latin Extended-A range ekliyor. `Fonts_Release` unload'da ilk sırada. Options'ta çalışıyor, chat'te henüz doğrulanmadı. Pattern: alter_ego, TyrianCodex ile aynı.
 - Addon unload may hang up to 45s if Gemini call is in-flight (WinHTTP sync can't be interrupted).
 - Google Search grounding disabled on free tier.
+- v0.2.2-v0.2.5 crash'leri: tespit edilemedi — Nexus hot-reload + ArcDPS ile korelasyon. Tam yeniden başlatma ile oluşmuyor. "Check for updates" yerine oyunu kapatıp açmak gerekiyor.
+- APIDefs->Log thread-safe (mutex korumalı, Nexus source'ta doğrulandı). Worker thread'den güvenle çağrılabilir.
 
 ### Data Files (addon directory, gitignored)
 

@@ -45,7 +45,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
     AddonDef.Version.Minor = 2;
-    AddonDef.Version.Build = 7;
+    AddonDef.Version.Build = 8;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -83,7 +83,10 @@ void AddonLoad(AddonAPI_t* aApi) {
 
     g_chatWindow = new ChatWindow();
     g_worker = new Worker();
-    g_worker->Start(g_config);
+    auto* api = APIDefs;
+    g_worker->Start(g_config, [api](const std::string& msg) {
+        api->Log(LOGL_WARNING, "Claymore", msg.c_str());
+    });
 
     g_showWindow = true;
 
@@ -102,7 +105,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.2.7 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.2.8 loaded.");
 }
 
 void AddonUnload() {
@@ -136,7 +139,7 @@ void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v0.2.7");
+    ImGui::Text("Claymore Asistan v0.2.8");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 
@@ -154,7 +157,10 @@ void AddonOptions() {
         g_config->Save(g_configPath);
         if (g_worker) {
             g_worker->Stop();
-            g_worker->Start(g_config);
+            auto* api2 = APIDefs;
+            g_worker->Start(g_config, [api2](const std::string& msg) {
+                api2->Log(LOGL_WARNING, "Claymore", msg.c_str());
+            });
         }
     }
 

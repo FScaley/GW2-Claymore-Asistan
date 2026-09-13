@@ -56,7 +56,7 @@ Detaylar: `faz0-rapor.md`
 - Model zinciri: gemini-3.5-flash-lite (30 RPM) → gemini-3.5-flash (15 RPM) → gemini-3.8-flash (15 RPM)
 - Per-model cooldown: 429'da model sogutuluyor, sonraki deneniyor
 - Rate limit havuzlari model basina (test ile dogrulandi: Lite 200, 3.8-flash 429 ayni anda)
-- 429 tam hata mesaji Nexus loguna yaziliyor (diagnostik)
+- 429 tam hata mesaji Nexus loguna yazilir (APIDefs->Log thread-safe — mutex korumali, dogrulandi)
 - Interaction model takibi: fallback'ta ID sifirlanir (cross-model ID test edilemedi)
 - ConfigManager: model_chain array (eski model/model_fallback yok sayilir)
 - UI: aktif model gosterimi, yedek kullanildiginda turuncu
@@ -64,7 +64,8 @@ Detaylar: `faz0-rapor.md`
 **Bilinen limitler:**
 - Tam markdown render yok (sadece **bold** + [&chatlink] — imgui_markdown Faz 2'de)
 - Function calling yok (Gemini kendi bilgisiyle cevap verir)
-- Turkce ğ/ş/ı karakterleri: v0.2.1'de duzeltildi (Segoe UI + Latin Extended-A)
+- Turkce font: v0.2.7 Segoe UI + nullptr config (Nexus pattern). Options'ta calisiyor, chat'te henuz dogrulanmadi
+- v0.2.2-v0.2.5 crash: Nexus hot-reload + ArcDPS korelasyonu. Tam restart ile olmuyor
 - Addon unload 45s'ye kadar bekleyebilir (in-flight Gemini cagrisi)
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
@@ -81,7 +82,7 @@ Detaylar: `faz0-rapor.md`
 - Waypoint chat_link (API'den dogrudan)
 - imgui_markdown (zengin metin render)
 - Per-call timeout + iptal butonu
-- ~~Turkce font fix~~ (v0.2.1'de tamamlandi)
+- Turkce font fix: v0.2.7'de nullptr config ile yukleniyor, chat'te dogrulama bekliyor
 - Google Search grounding: ucretli key varsa tools ekle (model_tier == "paid" kontrolu)
 
 ### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
