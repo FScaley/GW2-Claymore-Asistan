@@ -66,5 +66,5 @@ private:
     std::string m_interactionModel;
 
     static const std::string SYSTEM_PROMPT;
-    static constexpr int MAX_FC_ROUNDS = 4;
+    static constexpr int MAX_FC_ROUNDS = 6;
 };
