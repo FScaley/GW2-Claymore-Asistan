@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 class ConfigManager {
 public:
@@ -9,14 +10,8 @@ public:
     const std::string& GetApiKey() const { return m_apiKey; }
     void SetApiKey(const std::string& key) { m_apiKey = key; }
 
-    const std::string& GetModel() const { return m_model; }
-    void SetModel(const std::string& model) { m_model = model; }
-
-    const std::string& GetModelFallback() const { return m_modelFallback; }
-    void SetModelFallback(const std::string& model) { m_modelFallback = model; }
-
-    const std::string& GetModelTier() const { return m_modelTier; }
-    void SetModelTier(const std::string& tier) { m_modelTier = tier; }
+    const std::vector<std::string>& GetModelChain() const { return m_modelChain; }
+    void SetModelChain(const std::vector<std::string>& chain) { m_modelChain = chain; }
 
     float GetWindowX() const { return m_windowX; }
     float GetWindowY() const { return m_windowY; }
@@ -25,11 +20,11 @@ public:
     void SetWindowPos(float x, float y) { m_windowX = x; m_windowY = y; }
     void SetWindowSize(float w, float h) { m_windowW = w; m_windowH = h; }
 
+    static const std::vector<std::string> DEFAULT_MODEL_CHAIN;
+
 private:
     std::string m_apiKey;
-    std::string m_model = "gemini-3.8-flash";
-    std::string m_modelFallback = "gemini-3.5-flash";
-    std::string m_modelTier = "auto";
+    std::vector<std::string> m_modelChain;
     float m_windowX = 100.0f;
     float m_windowY = 100.0f;
     float m_windowW = 400.0f;

@@ -11,20 +11,22 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Kesin olmayan bilgilerde bunu belirt.\n"
     "- Kisa ve oz cevaplar ver.";
 
-void Worker::Start(ConfigManager* config) {
+void Worker::Start(ConfigManager* config, LogFunc logger) {
     m_config = config;
     m_gemini.SetApiKey(config->GetApiKey());
-    m_gemini.SetModel(config->GetModel());
-    m_gemini.SetModelFallback(config->GetModelFallback());
+    m_gemini.SetModelChain(config->GetModelChain());
+    if (logger) m_gemini.SetLogger(logger);
 
     m_stop = false;
     m_chatRequested = false;
     m_generation = 0;
     m_interactionId.clear();
+    m_interactionModel.clear();
     {
         std::lock_guard<std::mutex> lk(m_snapshotMutex);
         m_snapshot = ChatSnapshot{};
-        m_snapshot.model = config->GetModel();
+        auto& chain = config->GetModelChain();
+        m_snapshot.activeModel = chain.empty() ? GeminiClient::DEFAULT_CHAIN[0] : chain[0];
     }
     m_thread = std::thread(&Worker::Run, this);
 }
@@ -55,8 +57,10 @@ void Worker::ClearHistory() {
         std::lock_guard<std::mutex> lk(m_snapshotMutex);
         m_snapshot.messages.clear();
         m_snapshot.error.clear();
+        m_snapshot.fallbackUsed = false;
     }
     m_interactionId.clear();
+    m_interactionModel.clear();
 }
 
 void Worker::Run() {
@@ -84,10 +88,12 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.messages.push_back({ChatMessage::User, question});
         m_snapshot.busy = true;
         m_snapshot.error.clear();
+        m_snapshot.fallbackUsed = false;
         m_snapshot.generation = gen;
     }
 
-    GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT, m_interactionId);
+    GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
+                                        m_interactionId, m_interactionModel);
 
     if (m_generation != gen) return;
 
@@ -97,7 +103,10 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     if (resp.ok) {
         m_snapshot.messages.push_back({ChatMessage::Assistant, resp.text});
+        m_snapshot.activeModel = resp.activeModel;
+        m_snapshot.fallbackUsed = resp.fallbackUsed;
         m_interactionId = resp.interactionId;
+        m_interactionModel = resp.activeModel;
         m_snapshot.error.clear();
     } else {
         std::string errText;
@@ -108,6 +117,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         } else if (resp.statusCode == 400 || resp.statusCode == 404) {
             errText = resp.error.empty() ? "Istek hatasi." : resp.error;
             m_interactionId.clear();
+            m_interactionModel.clear();
         } else if (!resp.error.empty()) {
             errText = resp.error;
         } else {

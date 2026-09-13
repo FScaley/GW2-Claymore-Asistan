@@ -206,12 +206,15 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
 
     ChatSnapshot snap = worker->GetChatSnapshot();
 
-    if (!snap.model.empty()) {
-        std::string modelTag = snap.model;
+    if (!snap.activeModel.empty()) {
+        std::string modelTag = snap.activeModel;
+        if (snap.fallbackUsed)
+            modelTag += " (yedek)";
         float tagWidth = ImGui::CalcTextSize(modelTag.c_str()).x;
         float avail = ImGui::GetContentRegionAvail().x;
         ImGui::SameLine(avail - tagWidth);
-        ImGui::PushStyleColor(ImGuiCol_Text, COL_DIM);
+        ImGui::PushStyleColor(ImGuiCol_Text, snap.fallbackUsed
+            ? ImVec4(1.0f, 0.75f, 0.30f, 1.0f) : COL_DIM);
         ImGui::Text("%s", modelTag.c_str());
         ImGui::PopStyleColor();
     }

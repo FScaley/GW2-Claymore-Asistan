@@ -8,6 +8,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 
 struct ChatMessage {
     enum Role { User, Assistant, System };
@@ -19,13 +20,16 @@ struct ChatSnapshot {
     std::vector<ChatMessage> messages;
     bool busy = false;
     std::string error;
-    std::string model;
+    std::string activeModel;
+    bool fallbackUsed = false;
     uint64_t generation = 0;
 };
 
 class Worker {
 public:
-    void Start(ConfigManager* config);
+    using LogFunc = std::function<void(const std::string&)>;
+
+    void Start(ConfigManager* config, LogFunc logger = nullptr);
     void Stop();
 
     ChatSnapshot GetChatSnapshot() const;
@@ -52,6 +56,7 @@ private:
     std::atomic<uint64_t> m_generation{0};
 
     std::string m_interactionId;
+    std::string m_interactionModel;
 
     static const std::string SYSTEM_PROMPT;
 };
