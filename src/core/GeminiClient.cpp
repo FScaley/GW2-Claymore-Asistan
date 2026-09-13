@@ -207,8 +207,13 @@ GeminiResponse GeminiClient::Ask(const std::string& question,
             continue;
         }
 
-        if (result.statusCode == 500 || result.statusCode == 503) {
-            Log("Sunucu hatasi: " + m_chain[i] + " (" + std::to_string(result.statusCode) + ")");
+        // 500/503: server trouble. 400 "Model generated invalid JSON syntax ... Please retry the
+        // request": Gemini's own output failed to parse (observed on a plain tool-less question);
+        // it is transient, so try the next model instead of surfacing "Istek hatasi".
+        bool retryable400 = result.statusCode == 400 &&
+                            result.error.find("retry") != std::string::npos;
+        if (result.statusCode == 500 || result.statusCode == 503 || retryable400) {
+            Log("Sunucu/gecici hata: " + m_chain[i] + " (" + std::to_string(result.statusCode) + ")");
             lastResult = result;
             continue;
         }

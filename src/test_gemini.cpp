@@ -239,6 +239,38 @@ int main() {
                (all.find("retilemed") != std::string::npos || all.find("mevcut degil") != std::string::npos));
     }
 
+    printf("\n=== TEST 8: natural-language wiki query (Worker) — Janthir Syntri renown tokens ===\n");
+    {
+        // From a user's Nexus log (v0.3.9): 3 attempts x 6 empty gw2_wiki rounds, answer "bilgi bulunamadi".
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        Worker w;
+        w.Start(&config, &fht, [](const std::string& m) {
+            printf("  [LOG] %s\n", m.c_str());
+        });
+        w.RequestChat("janthir syntri renown tokens nedir, nasil alinir ve ne ise yarar?");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap = w.GetChatSnapshot();
+        w.Stop();
+        std::string all;
+        for (auto& m : snap.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) all += m.text;
+        }
+        printf("model=%s fallback=%d error=%s\n",
+               snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
+        printf("checks: writ=%d token=%d notfound=%d\n",
+               all.find("Writ of Renown") != std::string::npos,
+               all.find("Renown Token") != std::string::npos,
+               (all.find("bulunamadi") != std::string::npos || all.find("bulunamadı") != std::string::npos));
+    }
+
     printf("\n=== TUMU GECTI ===\n");
     return 0;
 }

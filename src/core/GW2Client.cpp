@@ -268,6 +268,55 @@ std::vector<int> GW2Client::SearchRecipesByOutput(int outputItemId) {
     return result;
 }
 
+namespace {
+
+// Lowercase alphanumeric words of 3+ chars, minus filler that models like to append
+// ("Guild Wars 2", "GW2", "wiki"). Used for both the query and candidate titles.
+std::vector<std::string> SearchWords(const std::string& s) {
+    static const char* const PADDING[] = {"gw2", "guild", "wars", "wiki"};
+    std::vector<std::string> words;
+    std::string cur;
+    auto flush = [&]() {
+        if (cur.size() >= 3) {
+            bool pad = false;
+            for (auto* p : PADDING) if (cur == p) { pad = true; break; }
+            if (!pad) words.push_back(cur);
+        }
+        cur.clear();
+    };
+    for (unsigned char c : s) {
+        if (std::isalnum(c)) cur += static_cast<char>(std::tolower(c));
+        else flush();
+    }
+    flush();
+    return words;
+}
+
+// Prefix-tolerant equality: "tokens" ~ "token", "hearts" ~ "heart".
+bool WordsMatch(const std::string& a, const std::string& b) {
+    return a.compare(0, b.size(), b) == 0 || b.compare(0, a.size(), a) == 0;
+}
+
+// Shared-word count plus the fraction of the title covered, so a short exact title
+// ("Renown Heart") outranks a long partial one ("Shard of Janthir Syntri") on a tie.
+// 0 when the title shares no word with the query - then it is a guess, not a match.
+double TitleScore(const std::vector<std::string>& queryWords, const std::string& title) {
+    auto titleWords = SearchWords(title);
+    if (titleWords.empty() || queryWords.empty()) return 0.0;
+    int shared = 0;
+    for (auto& tw : titleWords)
+        for (auto& qw : queryWords)
+            if (WordsMatch(tw, qw)) { ++shared; break; }
+    if (shared == 0) return 0.0;
+    return shared + static_cast<double>(shared) / titleWords.size();
+}
+
+} // namespace
+
+// Tier 1: opensearch = title PREFIX match. Exact page names hit; a plural or one extra
+// word ("Janthir Syntri Renown Tokens", "Gorrik Kourna location") returns nothing.
+// Tier 2 (only when tier 1 succeeded with zero hits): full-text search, re-ranked by
+// word overlap with the query and capped at 3 candidates. Results carry fulltext=true.
 std::vector<WikiSearchResult> GW2Client::WikiSearch(const std::string& query, int limit) {
     std::vector<WikiSearchResult> result;
     std::string path = "/api.php?action=opensearch&search=" + UrlEncode(query)
@@ -287,6 +336,47 @@ std::vector<WikiSearchResult> GW2Client::WikiSearch(const std::string& query, in
         }
     } catch (...) {}
 
+    if (result.empty()) return WikiFullTextSearch(query, limit);
+    return result;
+}
+
+std::vector<WikiSearchResult> GW2Client::WikiFullTextSearch(const std::string& query, int limit) {
+    std::vector<WikiSearchResult> result;
+    auto queryWords = SearchWords(query);
+    if (queryWords.empty()) return result;
+
+    std::string path = "/api.php?action=query&list=search&srsearch=" + UrlEncode(query)
+                     + "&srlimit=5&srnamespace=0&format=json";
+    auto resp = m_http.Get(WIKI_HOST, path);
+    if (!resp || resp->statusCode != 200) return result;
+
+    struct Scored { WikiSearchResult r; double score; };
+    std::vector<Scored> scored;
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("query") || !j["query"].contains("search")) return result;
+        for (auto& hit : j["query"]["search"]) {
+            std::string title = hit.value("title", "");
+            if (title.empty()) continue;
+            double score = TitleScore(queryWords, title);
+            if (score <= 0.0) continue;
+            WikiSearchResult r;
+            r.title = title;
+            std::string slug = title;
+            std::replace(slug.begin(), slug.end(), ' ', '_');
+            r.url = "https://wiki.guildwars2.com/wiki/" + UrlEncode(slug);
+            r.fulltext = true;
+            scored.push_back({std::move(r), score});
+        }
+    } catch (...) { return result; }
+
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const Scored& a, const Scored& b) { return a.score > b.score; });
+    int cap = std::min(limit, 3);
+    for (auto& s : scored) {
+        if (static_cast<int>(result.size()) >= cap) break;
+        result.push_back(std::move(s.r));
+    }
     return result;
 }
 

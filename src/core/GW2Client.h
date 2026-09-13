@@ -73,6 +73,7 @@ struct GW2MapInfo {
 struct WikiSearchResult {
     std::string title;
     std::string url;
+    bool fulltext = false;   // true when found by full-text fallback, not by title prefix
 };
 
 struct WikiPage {
@@ -109,6 +110,7 @@ public:
 private:
     std::string BuildIdList(const std::vector<int>& ids);
     std::string UrlEncode(const std::string& str);
+    std::vector<WikiSearchResult> WikiFullTextSearch(const std::string& query, int limit);
 
     HttpClient m_http;
 };

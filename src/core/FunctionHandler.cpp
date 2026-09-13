@@ -208,7 +208,7 @@ json FunctionHandler::GetToolDefinitions() {
             {"properties", {
                 {"query", {
                     {"type", "string"},
-                    {"description", "Page name or search query in English (e.g. 'Roller Beetle', 'Miyani', 'Shadow Behemoth')"}
+                    {"description", "Exact English wiki page title when known, singular (e.g. 'Roller Beetle', 'Miyani', 'Janthir Syntri Renown Token'); otherwise a short keyword phrase. The search is title-based: NEVER append filler such as 'Guild Wars 2', 'GW2', 'location', 'guide', 'farm' - extra words return nothing."}
                 }},
                 {"section", {
                     {"type", "string"},
@@ -470,8 +470,14 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
     if (query.empty()) return "{\"error\": \"query parameter required\"}";
 
     auto results = m_gw2->WikiSearch(query, 3);
-    if (results.empty())
-        return "{\"error\": \"No wiki results for: " + query + "\"}";
+    if (results.empty()) {
+        json err;
+        err["error"] = "No wiki page matched: " + query;
+        err["hint"] = "The wiki search is title-based. Retry with the exact English page title only "
+                      "(singular, no extra words such as 'GW2', 'Guild Wars 2', 'location', 'farm', 'guide'), "
+                      "or with the single most specific noun from the question (e.g. 'Leviathan').";
+        return err.dump();
+    }
     if (Cancelled(cancel)) return CANCELLED_JSON;
 
     std::string title = results[0].title;
@@ -556,6 +562,12 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
         for (size_t i = 1; i < results.size(); ++i)
             related.push_back(results[i].title);
         result["related"] = related;
+    }
+    if (results[0].fulltext) {
+        result["search_mode"] = "fulltext";
+        result["search_note"] = "No page title matched the query; this is the best full-text match. "
+                                "Check that it answers the question - if not, call gw2_wiki with an exact page title "
+                                "(see 'related').";
     }
 
     std::string idStr = GW2Client::ExtractItemIdFromWikitext(wikiPage.wikitext);

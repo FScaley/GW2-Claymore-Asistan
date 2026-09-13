@@ -18,6 +18,7 @@ static void Check(bool ok, const char* what) {
 }
 
 int main() {
+    setvbuf(stdout, nullptr, _IONBF, 0);   // unbuffered: a crash must not eat the lines before it
     GW2Client gw2;
 
     printf("=== A: Beetle Saddle HTML -> text (script/style leak check) ===\n");
@@ -158,6 +159,7 @@ int main() {
                     if (mn == "Thunderhead Peaks" && loc.value("npc_here", false)) thunderheadHere = true;
                 }
             }
+            Check(!j.contains("search_mode"), "exact-title query has no search_mode (opensearch path untouched)");
             Check(kournaFound, "locations include Domain of Kourna (area 'Allied Encampment' -> within)");
             Check(alliedWp, "Domain of Kourna waypoints include Allied Encampment Waypoint with real chat_link (POIs live on floor 49, not default_floor 1)");
             Check(thunderheadHere, "npc_here marks Thunderhead Peaks (wiki coordinates) and it is listed first");
@@ -183,6 +185,46 @@ int main() {
                   "semicolon area list resolves first area to Kessex Hills");
             Check(wpCount >= 10, "Kessex Hills waypoints attached");
         }
+    }
+
+    printf("\n=== H: natural-language query -> full-text fallback (Janthir Syntri renown tokens) ===\n");
+    {
+        // Observed in a user's Nexus log (v0.3.9): 'Janthir Syntri Renown Tokens' -> "No wiki results",
+        // then 5 more padded queries, all empty. opensearch is a title-PREFIX match: the plural alone kills it.
+        auto hits = gw2.WikiSearch("Janthir Syntri renown tokens", 5);
+        printf("WikiSearch hits=%zu first=%s fulltext=%d\n", hits.size(),
+               hits.empty() ? "-" : hits[0].title.c_str(), hits.empty() ? 0 : (int)hits[0].fulltext);
+        Check(!hits.empty() && hits[0].title == "Janthir Syntri Renown Token",
+              "plural/padded query resolves to 'Janthir Syntri Renown Token'");
+
+        ItemIndex idx;
+        FunctionHandler fh(&gw2, &idx);
+        FunctionCall call;
+        call.id = "t6";
+        call.name = "gw2_wiki";
+        call.arguments = {{"query", "janthir syntri renown tokens"}};
+        auto res = fh.Handle(call);
+        json j = json::parse(res.resultText, nullptr, false);
+        Check(!j.is_discarded(), "renown token result is valid JSON");
+        if (!j.is_discarded()) {
+            std::string itemId = j.contains("item_id") ? j["item_id"].dump() : "-";   // stored as a number
+            printf("title=%s item_id=%s search_mode=%s bytes=%zu\n",
+                   j.value("title", "-").c_str(), itemId.c_str(),
+                   j.value("search_mode", "-").c_str(), res.resultText.size());
+            Check(j.value("title", "") == "Janthir Syntri Renown Token", "page title is Janthir Syntri Renown Token");
+            Check(itemId == "102881", "item_id 102881 extracted");
+            Check(j.value("content", "").find("Local Writ of Renown") != std::string::npos,
+                  "content explains the Local Writ of Renown exchange");
+            Check(j.value("search_mode", "") == "fulltext", "search_mode marks the fuzzy path");
+        }
+
+        // Padded queries from the same log — informational: what does the fallback pick?
+        for (const char* q : {"Leviathan farm End of Dragons", "Gorrik Kourna location", "Dragonite Ore converter"}) {
+            auto h = gw2.WikiSearch(q, 5);
+            printf("  fallback [%s] -> %s\n", q, h.empty() ? "(none)" : h[0].title.c_str());
+        }
+        auto none = gw2.WikiSearch("meta farm train Guild Wars 2 Secrets of the Obscure Janthir Wilds", 5);
+        printf("  fallback [vague meta-farm query] -> %s\n", none.empty() ? "(none)" : none[0].title.c_str());
     }
 
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
