@@ -25,7 +25,11 @@ ChatWindow* g_chatWindow = nullptr;
 std::string g_configPath;
 std::string g_addonDir;
 bool g_showWindow = true;
+ImFont* g_font = nullptr;
 
+void OnFontReceived(const char* aIdentifier, void* aFont) {
+    g_font = (ImFont*)aFont;
+}
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason, LPVOID) {
     if (ul_reason == DLL_PROCESS_ATTACH) hSelf = hModule;
@@ -41,7 +45,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
     AddonDef.Version.Minor = 2;
-    AddonDef.Version.Build = 6;
+    AddonDef.Version.Build = 7;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -93,10 +97,18 @@ void AddonLoad(AddonAPI_t* aApi) {
     APIDefs->Textures_LoadFromURL("ICON_CLAYMORE_HOVER",
         "https://wiki.guildwars2.com", "/images/3/37/Crimson_Antique_Claymore.png", nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.2.6 loaded.");
+    char fontPath[MAX_PATH];
+    GetWindowsDirectoryA(fontPath, MAX_PATH);
+    strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
+    APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
+
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.2.7 loaded.");
 }
 
 void AddonUnload() {
+    APIDefs->Fonts_Release("FONT_CLAYMORE", OnFontReceived);
+    g_font = nullptr;
+
     APIDefs->GUI_Deregister(AddonRender);
     APIDefs->GUI_Deregister(AddonOptions);
     APIDefs->QuickAccess_Remove(QA_ID);
@@ -114,12 +126,17 @@ void AddonUnload() {
 
 void AddonRender() {
     if (!g_showWindow || !g_chatWindow || !g_worker) return;
+    ImFont* f = g_font;
+    if (f) ImGui::PushFont(f);
     g_chatWindow->Render(g_worker, &g_showWindow);
+    if (f) ImGui::PopFont();
 }
 
 void AddonOptions() {
     if (!g_config) return;
-    ImGui::Text("Claymore Asistan v0.2.6");
+    ImFont* f = g_font;
+    if (f) ImGui::PushFont(f);
+    ImGui::Text("Claymore Asistan v0.2.7");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 
@@ -155,4 +172,5 @@ void AddonOptions() {
         chainStr += chain[i];
     }
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Model zinciri: %s", chainStr.c_str());
+    if (f) ImGui::PopFont();
 }
