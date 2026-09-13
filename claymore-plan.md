@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.11 bugfix)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.12 bugfix)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -159,9 +159,21 @@ Detaylar: `faz0-rapor.md`
 - Sonuclar: test_wiki A–H yesil (degismedi); test_gemini Lite zincirinde TEST 5/6/7/8 `fallback=0` yesil; Flash saglikli oldugunda `--flash` ile tekrar kosulmali (sabah)
 - Bilinen limitler: free key'de turuncu etiket artik NORMAL durum (gunun ~20 Flash cagrisindan sonra) — "neden turuncu" tooltip'i follow-up; streak process icinde, oyun yeniden baslatilinca unutulur (~4 bosa deneme tekrar); 3.8-flash olculmemis aday birincil (limit + kalite kaydi yok)
 
+**v0.3.12 (13 Eylul 2026) — "Baglanti hatasi" nedenini soyluyor + API anahtari temizligi:**
+- Saha raporu: ikinci bir arkadas her soruda "baglanti basarisiz" aliyor, Nexus logunda yalnizca "Claymore loaded" var (cogu kiside sorun yok). Kod okuma: `HttpClient::Post` nullopt → GeminiClient "Baglanti hatasi" (statusCode 0, log yok) → `Ask` ilk modelde doner → Worker sadece sohbete yazar. Bos log bu yolun imzasi; WinHTTP hata kodu hic okunmuyordu
+- Ayirici deney (scratchpad `probe_header.exe`, sahte anahtarlar, config okunmadi): bos anahtar → 403 (loglanir); satir sonu/CRLF/bosluk/tirnak → 400 "API key not valid" (loglanir); **tek ASCII disi bayt (UTF-8 c-cedilla) → `WinHttpSendRequest` hata 87, 0 ms, cevap yok** = rapor edilen sessiz belirti birebir. Ikinci sinif: DNS/proxy/TLS/guvenlik duvari (12xxx) — yalnizca kodla ayirt edilir
+- HttpClient: Get/Post ortak `Request()`; `HttpFailure{stage, code, elapsedMs}` (GetLastError `CloseHandle`'dan ONCE), `LastFailureText()`, `DescribeError()` (FormatMessage winhttp.dll, Ingilizce→sistem dili, UTF-8), `TurkishHint()` (87/12002/12007/12029/12030/sertifika-TLS/12180), `Diagnostics()` (RtlGetVersion + WinHTTP varsayilan proxy + kullanici IE proxy; ag yok). `WinHttpOpen` hatasi kurucuda kaydedilir
+- GeminiClient::DoRequest: `[HTTP] model: WinHttpSendRequest: 12007 - The server name ... (50 ms)` logu; mesaj `Baglanti hatasi (kod N): <Turkce ipucu>`; statusCode 0'da zincir denemesi YOK (ag hatasi modelden bagimsiz, bekleme 3x olurdu). GW2Client: tum GET'ler `Fetch()` → cevap yoksa `[HTTP] host/path -> ...` (`SetLogger`; entry ayni logger lambda'sini verir)
+- ConfigManager: `SanitizeApiKey` (uclardaki bosluk/NBSP/dar NBSP/ZWSP/ZWNJ/ZWJ/BOM/tirnak; Load + SetApiKey), `ApiKeyProblem` (0x21–0x7E disi ilk karakterin konumu ve turu; anahtar asla yazilmaz). Worker: `m_keyProblem` `Start()`'ta (thread dogmadan — Kaydet config'i `Stop()`'tan once yazar, DoChat config okumaz; ilk taslaktaki `m_config->GetApiKey()` okumasi veri yarisiydi, advisor oncesi kendi incelemede yakalandi), DoChat HTTP gondermeden System mesaji + `API anahtari sorunu:` logu. entry: yuklemede `Ortam:` + `API anahtari: N karakter, gecerli|SORUN` satirlari; Options anahtar sorununu kirmizi gosterir; Kaydet temizlenmis anahtari girdiye geri yazar
+- Testler: test_wiki I once KIRMIZI (34 derleme hatasi — API yok), sonra A–I yesil: nonexistent.invalid → 12007 (50 ms), ASCII disi baslik → 87 (0 ms), /v2/build 200 hatayi siler, Diagnostics "Windows 10.0.26200 | WinHTTP proxy: dogrudan | kullanici proxy: otomatik algila=0 ...", sanitize/problem 11 kontrol. test_gemini TEST -1b (bos anahtar → "girilmemis", bozuk anahtar → "5. karakteri", `[HTTP]`/`[4xx]` satiri yok) + -1/0–9 Lite zincirinde yesil (2 kosu; TEST 9: Flash 429 54 s/41 s — aksam kotasi). test_wiki derleme satirina `core/ConfigManager.cpp` eklendi
+- Surec notu: ilk commit denemesinde PowerShell here-string'i `git commit -F -` yerine argumana gitti → commit olmadi ama tag+release eski commit'e (7d30f76) atildi; release+tag silindi (`gh release delete --cleanup-tag`), mesaj dosyadan commit (1794dd8), tag/push/release yenilendi; tag deref yerel+uzak dogrulandi. Kural: commit mesajini dosyaya yaz, `-F dosya`; tag atmadan once `git log -1` kontrol et
+- Bilinen limitler: HttpClient `WINHTTP_ACCESS_TYPE_DEFAULT_PROXY` — kullanici (tarayici) proxy'sini yok sayar; `AUTOMATIC_PROXY`'ye gecis kanit olmadan yapilmadi (herkese WPAD gecikmesi) → yalnizca log 12029/12002 + `kullanici proxy` dolu gosterirse v0.3.13; `Diagnostics()` proxy dizesini aynen yazar (`user:pass@host` olsa loga girer — nadir, `@` oncesi maskeleme v0.3.13); 87 ipucu anahtari suclar (tek degisken baslik); sanitize yalnizca uclari temizler, icerdeki karakter rapor edilir. Rapor KAPANMADI: arkadas guncelleyip 1 soru sorup uc satiri (`Ortam:`, `API anahtari:`, `[HTTP]`) gonderecek; kod 87 ise anahtari silip yeniden yapistirmasi yeter
+
 **Faz 2 kalan (ertelenmis / kosullu):**
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
 - "Neden turuncu" tooltip'i (kota mi, anlik 429 mu) — kucuk UI isi
+- Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
+- `Diagnostics()` proxy dizesinde `user:pass@` maskeleme — `Ortam:` satirinda herhangi bir proxy gorulurse
 - `model_chain` icin Options UI yok — eski kurulumlarda (arkadas, v0.3.0) Lite-once zincir config.json'da kalici; elle duzenleme veya UI
 - Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
