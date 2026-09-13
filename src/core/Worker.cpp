@@ -160,10 +160,14 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     SetToolStatus("");
 
-    if (!resp.ok && resp.error.empty() && resp.statusCode == 200)
-        resp.error = resp.RequiresAction()
-            ? "Tool dongusu limiti asildi"
-            : "Beklenmeyen yanit: " + resp.status;
+    if (resp.RequiresAction() && IsGenerationCurrent(gen)) {
+        SetToolStatus("Sonuclandiriliyor...");
+        resp = m_gemini.Ask(question, SYSTEM_PROMPT, "", "", nlohmann::json());
+        SetToolStatus("");
+    }
+
+    if (!resp.ok && resp.error.empty())
+        resp.error = "Cevap alinamadi (status: " + resp.status + ")";
 
     std::lock_guard<std::mutex> lk(m_snapshotMutex);
     m_snapshot.busy = false;
