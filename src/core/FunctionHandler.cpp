@@ -697,10 +697,12 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                         LocEntry e;
                         e.mapId = mapId;
                         e.mapName = mapInfo.name;
-                        e.areas.push_back(curMap);
                         e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
                         e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
                         entries.push_back(std::move(e));
+                    } else {
+                        for (auto& e : entries)
+                            if (LowerStr(e.mapName) == LowerStr(curMap)) { e.areas.push_back(name); break; }
                     }
                 } else {
                     curMap.clear();

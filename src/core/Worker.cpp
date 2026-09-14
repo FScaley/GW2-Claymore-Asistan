@@ -142,9 +142,9 @@ void Worker::ClearHistory() {
         m_snapshot.fallbackUsed = false;
         m_snapshot.toolStatus.clear();
         m_verifiedLinks.clear();
+        m_interactionId.clear();
+        m_interactionModel.clear();
     }
-    m_interactionId.clear();
-    m_interactionModel.clear();
 }
 
 void Worker::SetToolStatus(const std::string& status) {

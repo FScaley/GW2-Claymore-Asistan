@@ -190,6 +190,8 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         ImGui::PushStyleColor(ImGuiCol_Text, snap.fallbackUsed
             ? ImVec4(1.0f, 0.75f, 0.30f, 1.0f) : COL_DIM);
         ImGui::Text("%s", modelTag.c_str());
+        if (snap.fallbackUsed && ImGui::IsItemHovered())
+            ImGui::SetTooltip("Birincil model kota asiminda - yedek model kullanildi.\nFree API key ile normaldir.");
         ImGui::PopStyleColor();
     }
 

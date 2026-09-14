@@ -1,6 +1,7 @@
 #include "HttpClient.h"
 #include <Windows.h>
 #include <winhttp.h>
+#include <algorithm>
 #include <chrono>
 #pragma comment(lib, "winhttp.lib")
 
@@ -50,9 +51,7 @@ HttpClient::HttpClient()
 
 HttpTimeouts HttpClient::TimeoutsFor(int budgetMs)
 {
-    // Plain ternary, not std::min: this TU includes Windows.h and the project does not define
-    // NOMINMAX, so `min(` is a macro here (MSBuild caught it; the test build did not).
-    const int cap = budgetMs < 10000 ? budgetMs : 10000;
+    const int cap = std::min(budgetMs, 10000);
     HttpTimeouts t;
     t.resolve = cap;
     t.connect = cap;
