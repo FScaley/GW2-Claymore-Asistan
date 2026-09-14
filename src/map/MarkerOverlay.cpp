@@ -128,16 +128,25 @@ void MarkerOverlay::RenderMode3D(Mumble::Data* mumble, Mumble::Identity* ident,
         dl->AddCircle(ImVec2(sx, sy), markerSize * 0.5f, U32_GOLD, 32, 2.0f);
         dl->AddCircleFilled(ImVec2(sx, sy), std::max(3.0f, markerSize * 0.12f), U32_GOLD, 16);
 
-        char label[128];
-        snprintf(label, sizeof(label), "%s", target.name.c_str());
-        ImVec2 textSize = ImGui::CalcTextSize(label);
-        float lx = sx - textSize.x * 0.5f;
-        float ly = sy + markerSize * 0.5f + 6.0f;
-        dl->AddRectFilled(ImVec2(lx - 4, ly - 2), ImVec2(lx + textSize.x + 4, ly + textSize.y + 2),
-                          U32_HUD_BG, 2.0f);
-        dl->AddRect(ImVec2(lx - 4, ly - 2), ImVec2(lx + textSize.x + 4, ly + textSize.y + 2),
-                    U32_HUD_BORDER, 2.0f);
-        dl->AddText(ImVec2(lx, ly), U32_GOLD, label);
+        // Label: show always for few markers, mouse-proximity for many
+        bool showLabel = (m_coords.size() <= 10);
+        if (!showLabel) {
+            ImVec2 mousePos = ImGui::GetIO().MousePos;
+            float mdx = mousePos.x - sx, mdy = mousePos.y - sy;
+            showLabel = (mdx * mdx + mdy * mdy < 120.f * 120.f);
+        }
+        if (showLabel) {
+            char label[128];
+            snprintf(label, sizeof(label), "%s", target.name.c_str());
+            ImVec2 textSize = ImGui::CalcTextSize(label);
+            float lx = sx - textSize.x * 0.5f;
+            float ly = sy + markerSize * 0.5f + 6.0f;
+            dl->AddRectFilled(ImVec2(lx - 4, ly - 2), ImVec2(lx + textSize.x + 4, ly + textSize.y + 2),
+                              U32_HUD_BG, 2.0f);
+            dl->AddRect(ImVec2(lx - 4, ly - 2), ImVec2(lx + textSize.x + 4, ly + textSize.y + 2),
+                        U32_HUD_BORDER, 2.0f);
+            dl->AddText(ImVec2(lx, ly), U32_GOLD, label);
+        }
     } else {
         // Off-screen: compute bearing for edge arrow
         // Player continent position from Compass
@@ -276,8 +285,18 @@ void MarkerOverlay::RenderHUD(Mumble::Data* mumble, NexusLinkData_t* nexus,
     double playerCX = mumble->Context.Compass.PlayerPosition.X;
     double playerCY = mumble->Context.Compass.PlayerPosition.Y;
 
+    bool isCollection = m_coords.size() > 6;
+    int totalCoords = 0, sameMapCoords = 0;
+    for (auto& ec : m_coords) if (ec.hasCoord) { ++totalCoords; if (ec.mapId == static_cast<int>(mumble->Context.MapID)) ++sameMapCoords; }
+
     char hudText[256];
-    if (sameMap && target.hasCoord && rects) {
+    if (isCollection && sameMap) {
+        snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 bu haritada %d konum (%d toplam)",
+                 target.name.c_str(), sameMapCoords, totalCoords);
+    } else if (isCollection && !sameMap) {
+        snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 %d konum (%zu harita)",
+                 target.name.c_str(), totalCoords, m_rects.size());
+    } else if (sameMap && target.hasCoord && rects) {
         double dist = MapMath::ContinentDistanceMetres(
             playerCX, playerCY, target.cx, target.cy, rects->contRect, rects->mapRect);
         double bearing = MapMath::Bearing(playerCX, playerCY, target.cx, target.cy);

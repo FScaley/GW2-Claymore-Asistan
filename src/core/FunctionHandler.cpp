@@ -100,21 +100,30 @@ static bool ParseCoordinates(const std::string& value, double& x, double& y) {
 }
 
 struct InteractiveMapMarker {
-    std::string mapName;
+    std::string name;       // "name" field (entity/item name)
+    std::string mapName;    // from "text": "[[MapName]]" — may be empty for collections
+    std::string text;       // raw "text" field
     double cx = 0, cy = 0;
 };
 
-static std::vector<InteractiveMapMarker> ParseInteractiveMapMarkers(const std::string& wikitext) {
-    std::vector<InteractiveMapMarker> out;
+struct InteractiveMapData {
+    std::vector<InteractiveMapMarker> markers;
+    std::vector<int> mapIds;
+};
+
+static InteractiveMapData ParseInteractiveMapData(const std::string& wikitext) {
+    InteractiveMapData data;
     size_t pos = 0;
     while (pos < wikitext.size()) {
-        pos = wikitext.find("{{interactive map", pos);
-        if (pos == std::string::npos) break;
-        size_t end = wikitext.find("}}", pos + 2);
-        if (end == std::string::npos) break;
-        // Handle nested templates: find the matching closing }}
+        auto found = wikitext.find("{{interactive map", pos);
+        if (found == std::string::npos) {
+            found = wikitext.find("{{Interactive map", pos);
+            if (found == std::string::npos) break;
+        }
+        pos = found;
         size_t depth = 1;
         size_t scan = pos + 2;
+        size_t end = pos;
         while (scan < wikitext.size() - 1 && depth > 0) {
             if (wikitext[scan] == '{' && wikitext[scan + 1] == '{') { ++depth; ++scan; }
             else if (wikitext[scan] == '}' && wikitext[scan + 1] == '}') { --depth; if (depth == 0) { end = scan; break; } ++scan; }
@@ -123,7 +132,32 @@ static std::vector<InteractiveMapMarker> ParseInteractiveMapMarkers(const std::s
         std::string block = wikitext.substr(pos, end + 2 - pos);
         pos = end + 2;
 
-        // Extract each marker: { "coord": [x, y], ..., "text": "[[MapName]]" }
+        // Parse | map = 18,20,21,... (map ID list)
+        auto mapField = block.find("| map");
+        if (mapField == std::string::npos) mapField = block.find("|map");
+        if (mapField != std::string::npos) {
+            auto eq = block.find('=', mapField);
+            if (eq != std::string::npos) {
+                auto lineEnd = block.find('|', eq + 1);
+                if (lineEnd == std::string::npos) lineEnd = block.size();
+                std::string mapList = block.substr(eq + 1, lineEnd - eq - 1);
+                size_t mp = 0;
+                while (mp < mapList.size()) {
+                    while (mp < mapList.size() && !std::isdigit((unsigned char)mapList[mp])) ++mp;
+                    if (mp >= mapList.size()) break;
+                    size_t numStart = mp;
+                    while (mp < mapList.size() && std::isdigit((unsigned char)mapList[mp])) ++mp;
+                    try {
+                        int id = std::stoi(mapList.substr(numStart, mp - numStart));
+                        bool dup = false;
+                        for (int existing : data.mapIds) if (existing == id) { dup = true; break; }
+                        if (!dup) data.mapIds.push_back(id);
+                    } catch (...) {}
+                }
+            }
+        }
+
+        // Extract markers: { "coord": [x, y], "name": "...", "text": "..." }
         size_t mpos = 0;
         while (mpos < block.size()) {
             auto lb = block.find("\"coord\"", mpos);
@@ -145,23 +179,38 @@ static std::vector<InteractiveMapMarker> ParseInteractiveMapMarkers(const std::s
                 } catch (...) {}
             }
 
-            // Extract map name from "text": "[[MapName]]"
-            std::string mapName;
-            auto textKey = block.find("\"text\"", lb);
-            if (textKey != std::string::npos && textKey < block.find("\"coord\"", rbracket)) {
-                auto dblBracket = block.find("[[", textKey);
-                auto dblClose = block.find("]]", dblBracket != std::string::npos ? dblBracket : 0);
-                if (dblBracket != std::string::npos && dblClose != std::string::npos && dblClose > dblBracket)
-                    mapName = block.substr(dblBracket + 2, dblClose - dblBracket - 2);
+            // Extract "name" field
+            std::string markerName;
+            auto nameKey = block.find("\"name\"", lb);
+            auto nextCoord = block.find("\"coord\"", rbracket);
+            if (nameKey != std::string::npos && (nextCoord == std::string::npos || nameKey < nextCoord)) {
+                auto q1 = block.find('"', nameKey + 6);
+                auto q2 = block.find('"', q1 != std::string::npos ? q1 + 1 : 0);
+                if (q1 != std::string::npos && q2 != std::string::npos)
+                    markerName = block.substr(q1 + 1, q2 - q1 - 1);
             }
 
-            if (coordOk && !mapName.empty())
-                out.push_back({mapName, cx, cy});
+            // Extract "text" field and try to get [[MapName]] from it
+            std::string mapName, textField;
+            auto textKey = block.find("\"text\"", lb);
+            if (textKey != std::string::npos && (nextCoord == std::string::npos || textKey < nextCoord)) {
+                auto q1 = block.find('"', textKey + 6);
+                auto q2 = block.find('"', q1 != std::string::npos ? q1 + 1 : 0);
+                if (q1 != std::string::npos && q2 != std::string::npos)
+                    textField = block.substr(q1 + 1, q2 - q1 - 1);
+                auto dblBracket = textField.find("[[");
+                auto dblClose = textField.find("]]", dblBracket != std::string::npos ? dblBracket : 0);
+                if (dblBracket != std::string::npos && dblClose != std::string::npos)
+                    mapName = textField.substr(dblBracket + 2, dblClose - dblBracket - 2);
+            }
+
+            if (coordOk)
+                data.markers.push_back({markerName, mapName, textField, cx, cy});
 
             mpos = rbracket + 1;
         }
     }
-    return out;
+    return data;
 }
 
 static std::vector<std::string> FindEventLinks(const std::string& wikitext) {
@@ -812,6 +861,7 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
     std::vector<std::string> areas = SplitLocations(InfoboxField(lead, "location"), 4);
     double npcX = 0, npcY = 0;
     bool hasNpcCoord = ParseCoordinates(InfoboxField(lead, "coordinates"), npcX, npcY);
+    auto imapData = ParseInteractiveMapData(wikiPage.wikitext);
 
     if (!areas.empty()) {
         result["location_areas"] = areas;
@@ -920,7 +970,6 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                          [](const LocEntry& a, const LocEntry& b) { return a.npcHere && !b.npcHere; });
 
         // Entity coord side-channel: populate for marker overlay
-        auto interactiveMarkers = ParseInteractiveMapMarkers(wikiPage.wikitext);
         m_entityCoords.clear();
         m_mapRects.clear();
         for (auto& e : entries) {
@@ -934,8 +983,8 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             bool foundExact = false;
 
             // Priority 1: {{interactive map}} per-map coordinates
-            for (auto& im : interactiveMarkers) {
-                if (LowerStr(im.mapName) == LowerStr(e.mapName)) {
+            for (auto& im : imapData.markers) {
+                if (!im.mapName.empty() && LowerStr(im.mapName) == LowerStr(e.mapName)) {
                     EntityCoord ec;
                     ec.name = wikiPage.title;
                     ec.mapId = e.mapId;
@@ -1017,7 +1066,8 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                 auto eventPage = m_gw2->WikiGetPage(eventTitle);
                 if (!eventPage.found) continue;
 
-                auto eventMarkers = ParseInteractiveMapMarkers(eventPage.wikitext);
+                auto eventImapData = ParseInteractiveMapData(eventPage.wikitext);
+                auto& eventMarkers = eventImapData.markers;
                 std::string lead = LeadOf(eventPage.wikitext);
                 auto eventCoords = ParseMultiCoordinates(InfoboxField(lead, "coordinates"));
 
@@ -1071,6 +1121,56 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             result["nearby_waypoints"] = entries[0].waypoints;
         }
         if (!otherAreas.empty()) result["other_locations"] = otherAreas;
+    }
+
+    // Collection pages: no | location areas but may have {{interactive map}} with all markers
+    if (m_entityCoords.empty() && !imapData.markers.empty() && !Cancelled(cancel)) {
+        // Bulk-fetch map rects for all referenced maps
+        std::vector<int> missingMaps;
+        for (int mid : imapData.mapIds)
+            if (m_mapRects.find(mid) == m_mapRects.end()) missingMaps.push_back(mid);
+
+        if (!missingMaps.empty()) {
+            auto maps = m_gw2->GetMaps(missingMaps);
+            for (auto& m : maps) {
+                if (m.hasContRect && m.hasMapRect) {
+                    MapRects mr;
+                    mr.contRect[0] = m.contRect[0][0]; mr.contRect[1] = m.contRect[0][1];
+                    mr.contRect[2] = m.contRect[1][0]; mr.contRect[3] = m.contRect[1][1];
+                    mr.mapRect[0] = m.mapRect[0][0]; mr.mapRect[1] = m.mapRect[0][1];
+                    mr.mapRect[2] = m.mapRect[1][0]; mr.mapRect[3] = m.mapRect[1][1];
+                    m_mapRects[m.id] = mr;
+                }
+            }
+        }
+
+        for (auto& im : imapData.markers) {
+            // Geometric map resolution: find which map contains this coordinate
+            int resolvedMapId = 0;
+            std::string resolvedMapName;
+            for (auto& [mid, mr] : m_mapRects) {
+                double x1 = std::min(mr.contRect[0], mr.contRect[2]);
+                double x2 = std::max(mr.contRect[0], mr.contRect[2]);
+                double y1 = std::min(mr.contRect[1], mr.contRect[3]);
+                double y2 = std::max(mr.contRect[1], mr.contRect[3]);
+                if (im.cx >= x1 && im.cx <= x2 && im.cy >= y1 && im.cy <= y2) {
+                    resolvedMapId = mid;
+                    break;
+                }
+            }
+            if (resolvedMapId <= 0) continue;
+
+            EntityCoord ec;
+            ec.name = im.name.empty() ? wikiPage.title : im.name;
+            ec.mapId = resolvedMapId;
+            ec.mapName = im.mapName.empty() ? im.text : im.mapName;
+            ec.cx = im.cx;
+            ec.cy = im.cy;
+            ec.hasCoord = true;
+            ec.source = EntityCoord::Exact;
+            if (!im.text.empty()) ec.areas = {im.text};
+            m_entityCoords.push_back(std::move(ec));
+        }
     }
 
     return result.dump();

@@ -41,6 +41,7 @@ public:
     void Stop();
 
     ChatSnapshot GetChatSnapshot() const;
+    uint64_t GetEntitySeq() const { return m_entitySeq; }
     void RequestChat(const std::string& question);
     void CancelChat();
     void ClearHistory();

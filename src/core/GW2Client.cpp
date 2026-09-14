@@ -227,6 +227,51 @@ GW2MapInfo GW2Client::GetMap(int id) {
     return {};
 }
 
+std::vector<GW2MapInfo> GW2Client::GetMaps(const std::vector<int>& ids) {
+    std::vector<GW2MapInfo> result;
+    if (ids.empty()) return result;
+    std::string path = "/v2/maps?ids=" + BuildIdList(ids);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return result;
+    try {
+        auto arr = json::parse(resp->body);
+        for (auto& j : arr) {
+            GW2MapInfo m;
+            m.found = true;
+            m.id = j.value("id", 0);
+            m.name = j.value("name", "");
+            m.minLevel = j.value("min_level", 0);
+            m.maxLevel = j.value("max_level", 0);
+            m.regionId = j.value("region_id", 0);
+            m.regionName = j.value("region_name", "");
+            m.continentId = j.value("continent_id", 0);
+            m.continentName = j.value("continent_name", "");
+            if (j.contains("continent_rect") && j["continent_rect"].is_array() && j["continent_rect"].size() == 2) {
+                auto& r = j["continent_rect"];
+                if (r[0].is_array() && r[1].is_array() && r[0].size() == 2 && r[1].size() == 2) {
+                    m.contRect[0][0] = r[0][0].get<double>(); m.contRect[0][1] = r[0][1].get<double>();
+                    m.contRect[1][0] = r[1][0].get<double>(); m.contRect[1][1] = r[1][1].get<double>();
+                    m.hasContRect = true;
+                }
+            }
+            if (j.contains("map_rect") && j["map_rect"].is_array() && j["map_rect"].size() == 2) {
+                auto& r = j["map_rect"];
+                if (r[0].is_array() && r[1].is_array() && r[0].size() == 2 && r[1].size() == 2) {
+                    m.mapRect[0][0] = r[0][0].get<double>(); m.mapRect[0][1] = r[0][1].get<double>();
+                    m.mapRect[1][0] = r[1][0].get<double>(); m.mapRect[1][1] = r[1][1].get<double>();
+                    m.hasMapRect = true;
+                }
+            }
+            m.defaultFloor = j.value("default_floor", 1);
+            if (j.contains("floors") && j["floors"].is_array())
+                for (auto& f : j["floors"])
+                    if (f.is_number_integer()) m.floors.push_back(f.get<int>());
+            result.push_back(std::move(m));
+        }
+    } catch (...) {}
+    return result;
+}
+
 GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
     auto mapInfo = GetMap(mapId);
     if (!mapInfo.found || mapInfo.continentId == 0 || mapInfo.regionId == 0)

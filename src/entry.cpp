@@ -189,9 +189,10 @@ void AddonRender() {
 void OverlayRender() {
     if (!g_overlay || !g_worker || !MumbleLink) return;
 
-    auto snap = g_worker->GetChatSnapshot();
-    if (snap.entitySeq != g_lastEntitySeq && snap.entitySeq > 0) {
-        g_lastEntitySeq = snap.entitySeq;
+    uint64_t seq = g_worker->GetEntitySeq();
+    if (seq != g_lastEntitySeq && seq > 0) {
+        g_lastEntitySeq = seq;
+        auto snap = g_worker->GetChatSnapshot();
         g_overlay->SetTarget(snap.entityCoords, snap.mapRects);
     }
 

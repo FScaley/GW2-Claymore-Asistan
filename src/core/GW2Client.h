@@ -126,6 +126,7 @@ public:
     std::vector<int> SearchRecipesByOutput(int outputItemId);
 
     GW2MapInfo GetMap(int id);
+    std::vector<GW2MapInfo> GetMaps(const std::vector<int>& ids);
     GW2MapInfo GetMapWithWaypoints(int mapId);
 
     std::vector<WikiSearchResult> WikiSearch(const std::string& query, int limit = 5);
