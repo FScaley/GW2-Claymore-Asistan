@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.15 bugfix/prompt/kaynak)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.16 bugfix/prompt/kaynak)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -197,9 +197,15 @@ Detaylar: `faz0-rapor.md`
 - Testler: test_wiki K (zero Gemini: 8 section, 12KB, sifir sizinti, entity decode, section=, cancel); test_gemini TEST 12 (Lite: balik tutma → fc_guide=1, source_named=1; TEST 6 gw2_guide'a donmedi — sinir tuttu)
 - Bilinen: (1) guide chat kodlari verifiedLinks'e girer — guildjen icin guvenilir ama yeni guven yuzeyi. (2) Per-session cache yok (section= iki HTTP cagrisi tekrarlar). (3) Top-hit only, relevance guard yok
 
+**v0.3.16 (14 Eylul 2026) — Konum zenginlestirme + verifiedLinks + guide cache:**
+- Locations section → locations[] zenginlestirme: NPC sayfalarin Locations bolumundeki haritalari (infobox'ta olmayanlar) `locations[]`'a ekler. Her ek harita `ResolveMapId` + `GetMapWithWaypoints` ile cozulur, gercek waypoint kodlari eklenir. LOCATION_MAP_CAP=6. Gharr 3→6 (Arborstone, Dragon's Stand, Wizard's Tower eklendi); Gorrik 3→6 (Grothmar Valley, Gyala Delve, Jahai Bluffs). Mythwright Gambit (raid) dogru sekilde cozumsuz kalir ve atlanir
+- verifiedLinks multi-turn fix: `m_verifiedLinks` artik Worker member (DoChat basina degil), `ClearHistory`'de sifirlaniyor. Insert `m_snapshotMutex` altinda — Cancel→Temizle sirasinda data race onlendi. TEST 10: turn 2'de sifir Stripped satiri (onceki 5 kosuda 1-2 per turn)
+- Guide per-session cache: `m_guideCache` (post id → normalized text). section= cagrisi GuideGetContent'i atlar, yalnizca GuideSearch tekrar calisir (1 HTTP tasarrufu)
+- Em-dash literal `\xe2\x80\x94` (ASCII kaynak kurali). Cap sabiti `LOCATION_MAP_CAP = 6`
+- Testler: test_wiki L (Gharr ≥5 location + Dragon's Stand Pact Base Camp waypoint); F Gorrik 3→6 regresyon yok; A-L yesil. test_gemini TEST 10 turn 1: 6/6 gercek kodlar, turn 2: 0 stripped; -1/-1b/0-12 yesil
+
 **Faz 2 kalan (ertelenmis / kosullu):**
-- Locations section → locations[] parse: infobox | location yalnizca bir alt kume; wiki Locations bolumunu (region→harita→bolge + kosul + waypoint adi) yapisal locations[]'a cevir — v0.3.14 text-based workaround'dan daha saglam
-- verifiedLinks multi-turn fix: DoChat basina sifirlanir, turn 2 turn 1'in gecerli kodlarini soyar — cozum: instance seviyesinde (veya en azindan oturum basina) link seti
+- Locations section area capture: section-derived entries harita adini areas[]'a koyuyor, gercek bolge adini (sonraki `- ` satiri) degil — dusuk oncelik, npc_here infobox'tan gelir
 - COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
 - Guide per-session cache: post id bazli cache, section= tekrar fetch yapmasin
 - snowcrows.com (PvE raid build) ve metabattle.com (genel build, MediaWiki) entegrasyonu — feasibility dogrulandi (SSR, robots.txt acik), kullanici onceligi dusuk ("buildler cok onemli degil"); gw2mists.com dustu (SPA, API 403)
