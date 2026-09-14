@@ -99,6 +99,13 @@ struct GuidePage {
     bool found = false;
 };
 
+struct BuildSearchResult {
+    std::string title;
+    int pageId = 0;
+    int size = 0;
+    std::string timestamp;
+};
+
 class GW2Client {
 public:
     GW2Item GetItem(int id);
@@ -120,12 +127,17 @@ public:
     std::vector<GuideSearchResult> GuideSearch(const std::string& query, int limit = 5);
     GuidePage GuideGetContent(const std::string& selfHref);
 
+    std::vector<BuildSearchResult> BuildSearch(const std::string& query, int limit = 10);
+    WikiPage BuildGetPage(const std::string& title);
+    WikiPage BuildGetPageHtml(const std::string& title);
+
     static std::string FormatPrice(int copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);
 
     static constexpr const char* API_HOST = "api.guildwars2.com";
     static constexpr const char* WIKI_HOST = "wiki.guildwars2.com";
     static constexpr const char* GUIDE_HOST = "guildjen.com";
+    static constexpr const char* BUILD_HOST = "metabattle.com";
 
     // Receives "[HTTP] host/path -> WinHttp... code" when a GET gets no response at all.
     using LogFunc = std::function<void(const std::string&)>;

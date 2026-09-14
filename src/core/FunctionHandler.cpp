@@ -126,6 +126,31 @@ static json BuildWaypointList(std::vector<GW2Waypoint> wps, bool sortByDist, dou
     return arr;
 }
 
+static std::string FindTemplateBlock(const std::string& text, const std::string& name) {
+    std::string lower = LowerStr(text);
+    std::string target = "{{" + LowerStr(name);
+    size_t pos = lower.find(target);
+    if (pos == std::string::npos) return "";
+    size_t afterName = pos + 2 + name.size();
+    if (afterName < text.size()) {
+        char c = text[afterName];
+        if (c != '|' && c != '\n' && c != '\r' && c != ' ' && c != '}') return "";
+    }
+    size_t i = pos + 2;
+    int depth = 1;
+    while (i < text.size()) {
+        if (text[i] == '{' && i + 1 < text.size() && text[i + 1] == '{') { depth++; i += 2; continue; }
+        if (text[i] == '}' && i + 1 < text.size() && text[i + 1] == '}') {
+            depth--;
+            if (depth == 0) return text.substr(pos + 2, i - pos - 2);
+            i += 2;
+            continue;
+        }
+        i++;
+    }
+    return "";
+}
+
 FunctionHandler::FunctionHandler(GW2Client* gw2, ItemIndex* index)
     : m_gw2(gw2), m_index(index) {}
 
@@ -144,6 +169,8 @@ FunctionResult FunctionHandler::Handle(const FunctionCall& call, CancelCheck sho
         result.resultText = HandleWiki(call.arguments, shouldCancel);
     else if (call.name == "gw2_guide")
         result.resultText = HandleGuide(call.arguments, shouldCancel);
+    else if (call.name == "gw2_build")
+        result.resultText = HandleBuild(call.arguments, shouldCancel);
     else
         result.resultText = "{\"error\": \"Unknown function: " + call.name + "\"}";
 
@@ -231,6 +258,30 @@ json FunctionHandler::GetToolDefinitions() {
                 {"query", {
                     {"type", "string"},
                     {"description", "Short English keywords for the guide topic (e.g. 'fishing guide', 'wvw beginner', 'legendary armor raid', 'gold farming'). Keep it concise — 2-4 words."}
+                }},
+                {"section", {
+                    {"type", "string"},
+                    {"description", "Optional. Exact section title from a previous result's 'sections' list to fetch that section in full when content was truncated."}
+                }}
+            }},
+            {"required", json::array({"query"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_build"},
+        {"description", "Search metabattle.com for GW2 builds by class or elite specialization. Returns build metadata (rating, game mode, role), the in-game template code (paste-ready [&D...] chat link), and a usage guide. The result includes 'alternatives' — other builds for the same class. Use for specific build/gear/trait questions. NOT for 'which class should I play' (answer those directly) or collection/achievement item lists (use gw2_wiki)."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"query", {
+                    {"type", "string"},
+                    {"description", "Class or elite specialization name in English ONLY (e.g. 'firebrand', 'guardian', 'dragonhunter', 'mechanist'). Do NOT include game mode words like 'wvw', 'pvp', 'pve' here - put those in the 'mode' parameter instead. The search is class/spec-based: extra words return nothing."}
+                }},
+                {"mode", {
+                    {"type", "string"},
+                    {"description", "Optional game mode filter. Values from metabattle: 'pve', 'pvp', 'wvw', 'open world', 'raid', 'fractal', 'wvw zerg', 'wvw roaming'. Matches as substring of the build's 'designed for' field."}
                 }},
                 {"section", {
                     {"type", "string"},
@@ -833,6 +884,186 @@ std::string FunctionHandler::HandleGuide(const json& args, const CancelCheck& ca
             related.push_back(results[i].title);
         result["related"] = related;
     }
+
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleBuild(const json& args, const CancelCheck& cancel) {
+    std::string query = args.value("query", "");
+    std::string mode = LowerStr(TrimStr(args.value("mode", "")));
+    std::string sectionWanted = TrimStr(args.value("section", ""));
+    if (query.empty()) return "{\"error\": \"query parameter required\"}";
+
+    auto results = m_gw2->BuildSearch(query, 10);
+    if (results.empty())
+        return "{\"error\": \"No build found for: " + query + "\"}";
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    struct BuildMeta {
+        std::string title;
+        std::string profession;
+        std::string specialization;
+        std::string designedFor;
+        std::string focus;
+        std::string rating;
+        std::string difficulty;
+        std::string templateCode;
+        std::string timestamp;
+    };
+
+    std::vector<BuildMeta> fetched;
+    int selectedIdx = -1;
+
+    for (size_t i = 0; i < results.size() && fetched.size() < BUILD_FETCH_CAP; ++i) {
+        if (Cancelled(cancel)) return CANCELLED_JSON;
+
+        auto page = m_gw2->BuildGetPage(results[i].title);
+        if (!page.found) continue;
+
+        if (page.wikitext.rfind("#REDIRECT", 0) == 0) {
+            auto lb = page.wikitext.find("[[");
+            auto rb = page.wikitext.find("]]");
+            if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
+                std::string target = page.wikitext.substr(lb + 2, rb - lb - 2);
+                auto hash = target.find('#');
+                if (hash != std::string::npos) target = target.substr(0, hash);
+                page = m_gw2->BuildGetPage(target);
+                if (!page.found) continue;
+            } else continue;
+        }
+
+        std::string buildBlock = FindTemplateBlock(page.wikitext, "Build");
+        BuildMeta bm;
+        bm.title = page.title;
+        bm.profession = InfoboxField(buildBlock, "profession");
+        bm.specialization = InfoboxField(buildBlock, "specialization");
+        bm.designedFor = InfoboxField(buildBlock, "designed for");
+        bm.focus = InfoboxField(buildBlock, "focus");
+        bm.rating = InfoboxField(buildBlock, "rating");
+        bm.difficulty = InfoboxField(buildBlock, "difficulty");
+        bm.timestamp = results[i].timestamp;
+
+        std::string tcBlock = FindTemplateBlock(page.wikitext, "TemplateCode");
+        if (!tcBlock.empty()) {
+            auto ls = tcBlock.find("[&");
+            if (ls != std::string::npos) {
+                auto le = tcBlock.find(']', ls);
+                if (le != std::string::npos)
+                    bm.templateCode = tcBlock.substr(ls, le - ls + 1);
+            }
+        }
+
+        fetched.push_back(std::move(bm));
+
+        if (selectedIdx < 0) {
+            std::string lr = LowerStr(fetched.back().rating);
+            bool ineligible = (lr == "archived" || lr == "draft" || lr == "trash" || lr == "test");
+            if (!ineligible) {
+                if (mode.empty() || LowerStr(fetched.back().designedFor).find(mode) != std::string::npos)
+                    selectedIdx = static_cast<int>(fetched.size()) - 1;
+            }
+        }
+    }
+
+    if (fetched.empty())
+        return "{\"error\": \"No build page available for: " + query + "\"}";
+    if (selectedIdx < 0) {
+        for (size_t i = 0; i < fetched.size(); ++i) {
+            std::string lr = LowerStr(fetched[i].rating);
+            if (lr != "archived" && lr != "draft" && lr != "trash" && lr != "test") {
+                selectedIdx = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+    if (selectedIdx < 0) selectedIdx = 0;
+
+    auto& sel = fetched[selectedIdx];
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+    auto htmlPage = m_gw2->BuildGetPageHtml(sel.title);
+
+    std::string content;
+    json sectionNames = json::array();
+
+    if (htmlPage.found && !htmlPage.html.empty()) {
+        std::string text = WikiText::HtmlToText(htmlPage.html);
+        std::vector<WikiSection> sections;
+        std::string lead = WikiText::SplitLead(text, sections);
+        for (auto& s : sections) sectionNames.push_back(s.title);
+
+        if (!sectionWanted.empty()) {
+            std::string want = LowerStr(sectionWanted);
+            for (auto& s : sections) {
+                if (LowerStr(s.title) == want) {
+                    content = "## " + s.title + "\n" + s.body;
+                    if (content.size() > BUILD_TEXT_BUDGET)
+                        content = content.substr(0, BUILD_TEXT_BUDGET) + "\n... (truncated)";
+                    break;
+                }
+            }
+            if (content.empty())
+                return "{\"error\": \"Section not found: " + sectionWanted + "\"}";
+        }
+
+        if (content.empty()) {
+            content = lead;
+            for (auto& s : sections) {
+                if (content.size() >= BUILD_TEXT_BUDGET) break;
+                std::string chunk = "\n\n## " + s.title + "\n" + s.body;
+                if (content.size() + chunk.size() > BUILD_TEXT_BUDGET) {
+                    size_t room = BUILD_TEXT_BUDGET - content.size();
+                    content += chunk.substr(0, room);
+                    content += "\n... (truncated - call gw2_build with section='" + s.title + "' for the rest)";
+                    break;
+                }
+                content += chunk;
+            }
+        }
+    }
+
+    json result;
+    result["source"] = "metabattle";
+    result["title"] = sel.title;
+    std::string slug = sel.title;
+    std::replace(slug.begin(), slug.end(), ' ', '_');
+    result["url"] = "https://metabattle.com/wiki/" + slug;
+    if (!sel.profession.empty()) result["profession"] = sel.profession;
+    if (!sel.specialization.empty()) result["specialization"] = sel.specialization;
+    if (!sel.designedFor.empty()) result["designed_for"] = sel.designedFor;
+    if (!sel.focus.empty()) result["focus"] = sel.focus;
+    if (!sel.rating.empty()) result["rating"] = sel.rating;
+    if (!sel.difficulty.empty()) result["difficulty"] = sel.difficulty;
+    if (!sel.templateCode.empty()) result["template_code"] = sel.templateCode;
+    if (!sel.timestamp.empty()) result["modified"] = sel.timestamp.substr(0, 10);
+
+    if (!content.empty()) result["content"] = content;
+    if (!sectionNames.empty()) result["sections"] = sectionNames;
+
+    if (!mode.empty() && LowerStr(sel.designedFor).find(mode) == std::string::npos)
+        result["mode_note"] = "No build matched mode '" + mode + "'; showing the top result instead.";
+    {
+        std::string lr = LowerStr(sel.rating);
+        if (lr == "archived" || lr == "draft" || lr == "trash" || lr == "test")
+            result["rating_note"] = "This build is rated '" + sel.rating + "' and may be outdated.";
+    }
+
+    json alts = json::array();
+    for (size_t i = 0; i < fetched.size(); ++i) {
+        if (static_cast<int>(i) == selectedIdx) continue;
+        json a;
+        a["title"] = fetched[i].title;
+        if (!fetched[i].designedFor.empty()) a["designed_for"] = fetched[i].designedFor;
+        if (!fetched[i].rating.empty()) a["rating"] = fetched[i].rating;
+        if (!fetched[i].templateCode.empty()) a["template_code"] = fetched[i].templateCode;
+        alts.push_back(a);
+    }
+    for (size_t i = fetched.size(); i < results.size() && alts.size() < 10; ++i) {
+        json a;
+        a["title"] = results[i].title;
+        alts.push_back(a);
+    }
+    if (!alts.empty()) result["alternatives"] = alts;
 
     return result.dump();
 }

@@ -13,7 +13,8 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Locations, waypoints, map info: call gw2_map\n"
     "- Specific NPC, event, achievement info: call gw2_wiki\n"
     "- How-to, farming, leveling, gearing, 'en iyi yol', mode introductions: call gw2_guide\n"
-    "- Opinions, comparisons, class/build recommendations: answer directly WITHOUT tools\n"
+    "- Skills, traits, gear, build templates for a profession or game mode: call gw2_build\n"
+    "- Which class to play, general comparisons, opinions: answer directly WITHOUT tools\n"
     "\n"
     "COMPLETENESS RULE: When the wiki result lists several ways, places, steps or sources for something, "
     "list ALL of them - never pick one for the user. If any entry carries a condition (mastery, achievement, "
@@ -42,7 +43,10 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Formatting: use **bold**, ### headers, - bullets, and `code` for chat codes. NEVER use markdown tables, images, or links.\n"
     "- When relaying a gw2_guide result, attribute it as 'guildjen rehberine gore (YYYY-MM)' using the "
     "modified date. Guide content is community experience, not canonical wiki fact; CONTRADICTION RULE "
-    "applies only to wiki facts - for a guide claim, the answer is 'rehber boyle diyor.'";
+    "applies only to wiki facts - for a guide claim, the answer is 'rehber boyle diyor.'\n"
+    "- When relaying a gw2_build result, attribute it as 'metabattle'a gore (rating, YYYY-MM)' using the "
+    "rating and modified fields. Relay template_code verbatim in backticks so the user can paste it in-game. "
+    "List alternatives briefly if relevant to the user's mode.";
 
 static std::set<std::string> ExtractChatLinks(const std::string& text) {
     std::set<std::string> links;

@@ -456,6 +456,75 @@ std::vector<GuideSearchResult> GW2Client::GuideSearch(const std::string& query, 
     return results;
 }
 
+std::vector<BuildSearchResult> GW2Client::BuildSearch(const std::string& query, int limit) {
+    std::string path = "/wiki/api.php?action=query&list=search&srnamespace=3000&srsearch="
+                     + UrlEncode(query) + "&srlimit=" + std::to_string(limit) + "&format=json";
+    auto resp = Fetch(BUILD_HOST, path, 25000);
+    if (!resp || resp->statusCode != 200) return {};
+
+    std::vector<BuildSearchResult> results;
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("query") || !j["query"].contains("search")) return {};
+        for (auto& hit : j["query"]["search"]) {
+            BuildSearchResult r;
+            r.title = hit.value("title", "");
+            r.pageId = hit.value("pageid", 0);
+            r.size = hit.value("size", 0);
+            r.timestamp = hit.value("timestamp", "");
+            if (!r.title.empty() && r.size > 100)
+                results.push_back(std::move(r));
+        }
+    } catch (...) {}
+    return results;
+}
+
+WikiPage GW2Client::BuildGetPage(const std::string& title) {
+    std::string path = "/wiki/api.php?action=parse&page=" + UrlEncode(title)
+                     + "&prop=wikitext&format=json";
+    auto resp = Fetch(BUILD_HOST, path);
+    if (!resp || resp->statusCode != 200) return {};
+
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("parse")) return {};
+        WikiPage page;
+        page.found = true;
+        page.title = j["parse"].value("title", title);
+        if (j["parse"].contains("wikitext")) {
+            if (j["parse"]["wikitext"].is_string())
+                page.wikitext = j["parse"]["wikitext"].get<std::string>();
+            else if (j["parse"]["wikitext"].contains("*"))
+                page.wikitext = j["parse"]["wikitext"]["*"].get<std::string>();
+        }
+        return page;
+    } catch (...) {}
+    return {};
+}
+
+WikiPage GW2Client::BuildGetPageHtml(const std::string& title) {
+    std::string path = "/wiki/api.php?action=parse&page=" + UrlEncode(title)
+                     + "&prop=text&disabletoc=1&disableeditsection=1&format=json";
+    auto resp = Fetch(BUILD_HOST, path, 25000);
+    if (!resp || resp->statusCode != 200) return {};
+
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("parse")) return {};
+        WikiPage page;
+        page.found = true;
+        page.title = j["parse"].value("title", title);
+        if (j["parse"].contains("text")) {
+            if (j["parse"]["text"].is_string())
+                page.html = j["parse"]["text"].get<std::string>();
+            else if (j["parse"]["text"].contains("*"))
+                page.html = j["parse"]["text"]["*"].get<std::string>();
+        }
+        return page;
+    } catch (...) {}
+    return {};
+}
+
 GuidePage GW2Client::GuideGetContent(const std::string& selfHref) {
     if (selfHref.empty()) return {};
     auto schemeEnd = selfHref.find("://");

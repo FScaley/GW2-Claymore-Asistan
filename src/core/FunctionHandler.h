@@ -31,6 +31,8 @@ public:
     static constexpr size_t WIKI_TEXT_BUDGET = 12 * 1024;
     static constexpr size_t WIKI_SUBPAGE_CAP = 5;
     static constexpr size_t GUIDE_TEXT_BUDGET = 12 * 1024;
+    static constexpr size_t BUILD_TEXT_BUDGET = 12 * 1024;
+    static constexpr size_t BUILD_FETCH_CAP = 5;
     static constexpr size_t LOCATION_MAP_CAP = 6;
 
 private:
@@ -39,6 +41,7 @@ private:
     std::string HandleMap(const nlohmann::json& args, const CancelCheck& cancel);
     std::string HandleWiki(const nlohmann::json& args, const CancelCheck& cancel);
     std::string HandleGuide(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleBuild(const nlohmann::json& args, const CancelCheck& cancel);
 
     int ResolveItemId(const std::string& name);
     int ResolveMapId(const std::string& name, int depth = 0);

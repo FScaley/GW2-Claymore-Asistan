@@ -4,6 +4,7 @@
 #include "core/FunctionHandler.h"
 #include "core/ConfigManager.h"
 #include <cstdio>
+#include <algorithm>
 #include <json.hpp>
 
 using json = nlohmann::json;
@@ -395,6 +396,81 @@ int main() {
         Check(locCount >= 5, "at least 5 locations (infobox + section)");
         Check(hasDragonsStand, "Dragon's Stand is in locations (from section text)");
         Check(dsPactBase, "Dragon's Stand has Pact Base Camp waypoint");
+    }
+
+    printf("\n=== M: gw2_build — metabattle builds (zero Gemini) ===\n");
+    {
+        GW2Client gw2m;
+        ItemIndex idxm;
+        FunctionHandler fhm(&gw2m, &idxm);
+        FunctionCall call;
+        auto noCancel = [](){ return false; };
+
+        call.id = "m1"; call.name = "gw2_build";
+        call.arguments = {{"query", "firebrand"}, {"mode", "wvw"}};
+        auto r = fhm.Handle(call, noCancel);
+        auto j = json::parse(r.resultText, nullptr, false);
+        printf("size=%zu\n", r.resultText.size());
+        Check(!j.is_discarded() && !j.contains("error"), "gw2_build returns valid JSON, no error");
+        Check(j.value("source", "") == "metabattle", "source is metabattle");
+        std::string title = j.value("title", "");
+        printf("title: %s\n", title.c_str());
+        Check(!title.empty(), "title is non-empty");
+
+        std::string tc = j.value("template_code", "");
+        printf("template_code: %.40s...\n", tc.c_str());
+        Check(tc.size() >= 4 && tc.compare(0, 3, "[&D") == 0, "template_code starts with [&D");
+
+        std::string df = j.value("designed_for", "");
+        printf("designed_for: %s\n", df.c_str());
+        std::string dfLower = df;
+        std::transform(dfLower.begin(), dfLower.end(), dfLower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        Check(dfLower.find("wvw") != std::string::npos, "designed_for contains wvw");
+
+        std::string rating = j.value("rating", "");
+        printf("rating: %s\n", rating.c_str());
+        Check(!rating.empty(), "rating is non-empty");
+        {
+            std::string lr = rating;
+            std::transform(lr.begin(), lr.end(), lr.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            Check(lr != "archived" && lr != "draft" && lr != "trash" && lr != "test",
+                  "rating is not archived/draft/trash/test");
+        }
+
+        json alts = j.value("alternatives", json::array());
+        printf("alternatives: %zu\n", alts.size());
+        Check(alts.size() >= 1, "at least 1 alternative");
+
+        std::string content = j.value("content", "");
+        printf("content_size=%zu\n", content.size());
+        printf("--- content preview (first 600) ---\n%.600s\n--- end preview ---\n", content.c_str());
+        Check(content.size() > 100 && content.size() < 14 * 1024, "content between 100 and 14KB");
+        Check(content.find("data-") == std::string::npos, "no data- attribute leak");
+        Check(content.find("tooltip") == std::string::npos, "no tooltip leak");
+
+        json secs = j.value("sections", json::array());
+        printf("sections: %zu\n", secs.size());
+        for (size_t i = 0; i < secs.size() && i < 10; ++i)
+            printf("  ## %s\n", secs[i].get<std::string>().c_str());
+
+        printf("\n--- M2: gw2_build no mode ---\n");
+        call.id = "m2"; call.name = "gw2_build";
+        call.arguments = {{"query", "guardian"}};
+        auto r2 = fhm.Handle(call, noCancel);
+        auto j2 = json::parse(r2.resultText, nullptr, false);
+        Check(!j2.is_discarded() && !j2.contains("error"), "no-mode returns valid JSON");
+        Check(j2.value("source", "") == "metabattle", "no-mode source is metabattle");
+        printf("no-mode title: %s\n", j2.value("title", "").c_str());
+        printf("no-mode rating: %s\n", j2.value("rating", "").c_str());
+
+        printf("\n--- M3: cancel ---\n");
+        auto cancelled = [](){ return true; };
+        call.id = "m3"; call.name = "gw2_build";
+        call.arguments = {{"query", "thief"}};
+        auto rc = fhm.Handle(call, cancelled);
+        Check(rc.resultText.find("cancelled") != std::string::npos, "cancel is honored");
     }
 
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
