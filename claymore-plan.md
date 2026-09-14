@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.17 bugfix/prompt/kaynak)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.18 bugfix/prompt/kaynak)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -211,6 +211,12 @@ Detaylar: `faz0-rapor.md`
 - Locations section area capture: section-derived entries artik harita adi yerine gercek alan adini (ikinci `- ` satiri, orn. "Pact Base Camp") aliyor
 - Testler: A-L + -1/-1b/0-12 yesil. MSBuild NOMINMAX ile derlendi, `std::min` calisiyor
 
+**v0.3.18 (14 Eylul 2026) — Model chain UI, otomatik proxy, ItemIndex periodic save:**
+- Model chain Options UI: Nexus Options panelinde her model icin dropdown secici + yukari/asagi sirala butonlari. Degisiklik aninda config.json'a kaydedilir ve Worker yeniden baslatilir
+- AUTOMATIC_PROXY: WinHTTP oturumu artik kullanicinin proxy ayarlarini (PAC, WPAD, IE proxy) otomatik algilar (Win 8.1+). DEFAULT_PROXY'ye fallback eski Windows icin korundu
+- ItemIndex periodic save: her 20 yeni item eklendiginde otomatik diske kaydeder. Oyun cikisinda AddonUnload calismazsa bile cache korunur
+- Testler: A-L yesil. MSBuild Release derlendi
+
 **Faz 2 kalan (ertelenmis / kosullu):**
 - COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
 - ~~Guide per-session cache~~ — v0.3.16'da eklendi (search hala tekrar calisir)
@@ -222,7 +228,7 @@ Detaylar: `faz0-rapor.md`
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
 - `Diagnostics()` proxy dizesinde `user:pass@` maskeleme — `Ortam:` satirinda herhangi bir proxy gorulurse
 - ~~vcxproj'a `NOMINMAX`~~ — v0.3.17'de eklendi; `std::min` workaround'i kaldirildi
-- `model_chain` icin Options UI yok — eski kurulumlarda (arkadas, v0.3.0) Lite-once zincir config.json'da kalici; elle duzenleme veya UI
+- ~~`model_chain` icin Options UI~~ — v0.3.18'de eklendi (dropdown + reorder butonlari)
 - Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
 - Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
@@ -280,7 +286,7 @@ Detaylar: `faz0-rapor.md`
 ## Gemini API Notlari
 
 - Endpoint: /v1beta/interactions (Interactions API)
-- Model zinciri (v0.3.6+): gemini-3.5-flash (birincil — free key'de gunde ~20 cagri) → gemini-3.5-flash-lite (yedek, fiili is yuku) → gemini-3.8-flash. Config'deki model_chain korunur; varsayilan sadece yeni kurulumlar icin (v0.3.0 kurulumlari Lite-once zincirle kaldi; Options UI yok)
+- Model zinciri (v0.3.6+): gemini-3.5-flash (birincil — free key'de gunde ~20 cagri) → gemini-3.5-flash-lite (yedek, fiili is yuku) → gemini-3.8-flash. Config'deki model_chain korunur; varsayilan sadece yeni kurulumlar icin (v0.3.18: Options UI ile degistirilebilir)
 - Free tier: Flash `limit: 20` GUNLUK (13 Eylul 2026 kaniti), Lite bugune kadar hic 429 vermedi, grounding kota 0, Pro limit 0. 429 govdesinde quotaId yok; "retry in Xs" ipucu gunluk kotada da kucuk — guvenilmez
 - Eski modeller (2.5): yeni kullanicilara kapali
 - Key format: AQ. prefix gecerli
