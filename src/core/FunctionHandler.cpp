@@ -99,6 +99,141 @@ static bool ParseCoordinates(const std::string& value, double& x, double& y) {
     }
 }
 
+struct InteractiveMapMarker {
+    std::string mapName;
+    double cx = 0, cy = 0;
+};
+
+static std::vector<InteractiveMapMarker> ParseInteractiveMapMarkers(const std::string& wikitext) {
+    std::vector<InteractiveMapMarker> out;
+    size_t pos = 0;
+    while (pos < wikitext.size()) {
+        pos = wikitext.find("{{interactive map", pos);
+        if (pos == std::string::npos) break;
+        size_t end = wikitext.find("}}", pos + 2);
+        if (end == std::string::npos) break;
+        // Handle nested templates: find the matching closing }}
+        size_t depth = 1;
+        size_t scan = pos + 2;
+        while (scan < wikitext.size() - 1 && depth > 0) {
+            if (wikitext[scan] == '{' && wikitext[scan + 1] == '{') { ++depth; ++scan; }
+            else if (wikitext[scan] == '}' && wikitext[scan + 1] == '}') { --depth; if (depth == 0) { end = scan; break; } ++scan; }
+            else ++scan;
+        }
+        std::string block = wikitext.substr(pos, end + 2 - pos);
+        pos = end + 2;
+
+        // Extract each marker: { "coord": [x, y], ..., "text": "[[MapName]]" }
+        size_t mpos = 0;
+        while (mpos < block.size()) {
+            auto lb = block.find("\"coord\"", mpos);
+            if (lb == std::string::npos) break;
+            auto bracket = block.find('[', lb + 7);
+            if (bracket == std::string::npos) break;
+            auto rbracket = block.find(']', bracket + 1);
+            if (rbracket == std::string::npos) break;
+            std::string coordStr = block.substr(bracket + 1, rbracket - bracket - 1);
+
+            double cx = 0, cy = 0;
+            auto comma = coordStr.find(',');
+            bool coordOk = false;
+            if (comma != std::string::npos) {
+                try {
+                    cx = std::stod(TrimStr(coordStr.substr(0, comma)));
+                    cy = std::stod(TrimStr(coordStr.substr(comma + 1)));
+                    coordOk = true;
+                } catch (...) {}
+            }
+
+            // Extract map name from "text": "[[MapName]]"
+            std::string mapName;
+            auto textKey = block.find("\"text\"", lb);
+            if (textKey != std::string::npos && textKey < block.find("\"coord\"", rbracket)) {
+                auto dblBracket = block.find("[[", textKey);
+                auto dblClose = block.find("]]", dblBracket != std::string::npos ? dblBracket : 0);
+                if (dblBracket != std::string::npos && dblClose != std::string::npos && dblClose > dblBracket)
+                    mapName = block.substr(dblBracket + 2, dblClose - dblBracket - 2);
+            }
+
+            if (coordOk && !mapName.empty())
+                out.push_back({mapName, cx, cy});
+
+            mpos = rbracket + 1;
+        }
+    }
+    return out;
+}
+
+static std::vector<std::string> FindEventLinks(const std::string& wikitext) {
+    std::vector<std::string> links;
+
+    // GW2 wiki uses {{event|Event Name}} template, not [[Event Name]] links
+    size_t pos = 0;
+    while (pos < wikitext.size()) {
+        auto ev = wikitext.find("{{event|", pos);
+        if (ev == std::string::npos) break;
+        size_t nameStart = ev + 8;
+        auto rb = wikitext.find("}}", nameStart);
+        if (rb == std::string::npos) break;
+        std::string name = TrimStr(wikitext.substr(nameStart, rb - nameStart));
+        auto pipe = name.find('|');
+        if (pipe != std::string::npos) name = name.substr(0, pipe);
+        name = TrimStr(name);
+        if (!name.empty()) {
+            bool dup = false;
+            for (auto& existing : links) if (existing == name) { dup = true; break; }
+            if (!dup) links.push_back(name);
+        }
+        pos = rb + 2;
+    }
+
+    // Also check {{see|EventName#...}} pattern
+    pos = 0;
+    while (pos < wikitext.size()) {
+        auto see = wikitext.find("{{see|", pos);
+        if (see == std::string::npos) break;
+        size_t nameStart = see + 6;
+        auto rb = wikitext.find("}}", nameStart);
+        if (rb == std::string::npos) break;
+        std::string name = TrimStr(wikitext.substr(nameStart, rb - nameStart));
+        auto pipe = name.find('|');
+        if (pipe != std::string::npos) name = name.substr(0, pipe);
+        auto hash = name.find('#');
+        if (hash != std::string::npos) name = name.substr(0, hash);
+        name = TrimStr(name);
+        if (!name.empty() && name.size() > 8) {
+            bool dup = false;
+            for (auto& existing : links) if (existing == name) { dup = true; break; }
+            if (!dup) links.push_back(name);
+        }
+        pos = rb + 2;
+    }
+
+    return links;
+}
+
+static std::vector<std::pair<double, double>> ParseMultiCoordinates(const std::string& value) {
+    std::vector<std::pair<double, double>> coords;
+    size_t pos = 0;
+    while (pos < value.size()) {
+        auto lb = value.find('[', pos);
+        if (lb == std::string::npos) break;
+        auto rb = value.find(']', lb + 1);
+        if (rb == std::string::npos) break;
+        std::string inner = value.substr(lb + 1, rb - lb - 1);
+        auto comma = inner.find(',');
+        if (comma != std::string::npos) {
+            try {
+                double x = std::stod(TrimStr(inner.substr(0, comma)));
+                double y = std::stod(TrimStr(inner.substr(comma + 1)));
+                coords.push_back({x, y});
+            } catch (...) {}
+        }
+        pos = rb + 1;
+    }
+    return coords;
+}
+
 static bool InContinentRect(const GW2MapInfo& m, double x, double y) {
     if (!m.hasContRect) return false;
     double x1 = std::min(m.contRect[0][0], m.contRect[1][0]);
@@ -687,6 +822,10 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             std::vector<std::string> areas;
             bool npcHere = false;
             json waypoints;
+            double contRect[4] = {};
+            double mapRect[4] = {};
+            bool hasRects = false;
+            std::vector<GW2Sector> sectors;
         };
         std::vector<LocEntry> entries;
         json otherAreas = json::array();
@@ -711,6 +850,14 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             e.areas.push_back(area);
             e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
             e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
+            e.sectors = mapInfo.sectors;
+            if (mapInfo.hasContRect && mapInfo.hasMapRect) {
+                e.contRect[0] = mapInfo.contRect[0][0]; e.contRect[1] = mapInfo.contRect[0][1];
+                e.contRect[2] = mapInfo.contRect[1][0]; e.contRect[3] = mapInfo.contRect[1][1];
+                e.mapRect[0] = mapInfo.mapRect[0][0]; e.mapRect[1] = mapInfo.mapRect[0][1];
+                e.mapRect[2] = mapInfo.mapRect[1][0]; e.mapRect[3] = mapInfo.mapRect[1][1];
+                e.hasRects = true;
+            }
             entries.push_back(std::move(e));
         }
 
@@ -750,6 +897,14 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                         e.mapName = mapInfo.name;
                         e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
                         e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
+                        e.sectors = mapInfo.sectors;
+                        if (mapInfo.hasContRect && mapInfo.hasMapRect) {
+                            e.contRect[0] = mapInfo.contRect[0][0]; e.contRect[1] = mapInfo.contRect[0][1];
+                            e.contRect[2] = mapInfo.contRect[1][0]; e.contRect[3] = mapInfo.contRect[1][1];
+                            e.mapRect[0] = mapInfo.mapRect[0][0]; e.mapRect[1] = mapInfo.mapRect[0][1];
+                            e.mapRect[2] = mapInfo.mapRect[1][0]; e.mapRect[3] = mapInfo.mapRect[1][1];
+                            e.hasRects = true;
+                        }
                         entries.push_back(std::move(e));
                     } else {
                         for (auto& e : entries)
@@ -763,6 +918,141 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
 
         std::stable_sort(entries.begin(), entries.end(),
                          [](const LocEntry& a, const LocEntry& b) { return a.npcHere && !b.npcHere; });
+
+        // Entity coord side-channel: populate for marker overlay
+        auto interactiveMarkers = ParseInteractiveMapMarkers(wikiPage.wikitext);
+        m_entityCoords.clear();
+        m_mapRects.clear();
+        for (auto& e : entries) {
+            if (e.hasRects) {
+                MapRects mr;
+                std::copy(e.contRect, e.contRect + 4, mr.contRect);
+                std::copy(e.mapRect, e.mapRect + 4, mr.mapRect);
+                m_mapRects[e.mapId] = mr;
+            }
+
+            bool foundExact = false;
+
+            // Priority 1: {{interactive map}} per-map coordinates
+            for (auto& im : interactiveMarkers) {
+                if (LowerStr(im.mapName) == LowerStr(e.mapName)) {
+                    EntityCoord ec;
+                    ec.name = wikiPage.title;
+                    ec.mapId = e.mapId;
+                    ec.mapName = e.mapName;
+                    ec.areas = e.areas;
+                    ec.cx = im.cx;
+                    ec.cy = im.cy;
+                    ec.hasCoord = true;
+                    ec.source = EntityCoord::Exact;
+                    m_entityCoords.push_back(std::move(ec));
+                    foundExact = true;
+                    break;
+                }
+            }
+
+            // Priority 2: wiki infobox | coordinates (npcHere)
+            if (!foundExact && e.npcHere && hasNpcCoord) {
+                EntityCoord ec;
+                ec.name = wikiPage.title;
+                ec.mapId = e.mapId;
+                ec.mapName = e.mapName;
+                ec.areas = e.areas;
+                ec.cx = npcX;
+                ec.cy = npcY;
+                ec.hasCoord = true;
+                ec.source = EntityCoord::Exact;
+                m_entityCoords.push_back(std::move(ec));
+                foundExact = true;
+            }
+
+            // Priority 3: sector center per area (one entry per matched area)
+            if (!foundExact && !e.sectors.empty()) {
+                for (auto& area : e.areas) {
+                    std::string la = LowerStr(area);
+                    for (auto& sec : e.sectors) {
+                        std::string ls = LowerStr(sec.name);
+                        if (la == ls || ls.find(la) != std::string::npos || la.find(ls) != std::string::npos) {
+                            EntityCoord ec;
+                            ec.name = wikiPage.title;
+                            ec.mapId = e.mapId;
+                            ec.mapName = e.mapName;
+                            ec.areas = {area};
+                            ec.cx = sec.x;
+                            ec.cy = sec.y;
+                            ec.hasCoord = true;
+                            ec.source = EntityCoord::Sector;
+                            m_entityCoords.push_back(std::move(ec));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Priority 4: no coord — HUD-only entry
+            if (!foundExact) {
+                bool hasSector = false;
+                for (auto& ec : m_entityCoords)
+                    if (ec.mapId == e.mapId && ec.source == EntityCoord::Sector) { hasSector = true; break; }
+                if (!hasSector) {
+                    EntityCoord ec;
+                    ec.name = wikiPage.title;
+                    ec.mapId = e.mapId;
+                    ec.mapName = e.mapName;
+                    ec.areas = e.areas;
+                    m_entityCoords.push_back(std::move(ec));
+                }
+            }
+        }
+
+        // Event page hop: upgrade Sector entries with exact event spawn coordinates
+        bool hasSector = false;
+        for (auto& ec : m_entityCoords)
+            if (ec.source == EntityCoord::Sector) { hasSector = true; break; }
+
+        if (hasSector && !Cancelled(cancel)) {
+            auto eventLinks = FindEventLinks(wikiPage.wikitext);
+            for (auto& eventTitle : eventLinks) {
+                if (Cancelled(cancel)) break;
+                auto eventPage = m_gw2->WikiGetPage(eventTitle);
+                if (!eventPage.found) continue;
+
+                auto eventMarkers = ParseInteractiveMapMarkers(eventPage.wikitext);
+                std::string lead = LeadOf(eventPage.wikitext);
+                auto eventCoords = ParseMultiCoordinates(InfoboxField(lead, "coordinates"));
+
+                std::vector<std::pair<double, double>> candidates;
+                for (auto& em : eventMarkers) candidates.push_back({em.cx, em.cy});
+                for (auto& c : eventCoords) candidates.push_back(c);
+
+                for (auto& [cx, cy] : candidates) {
+                    // Determine which map this coordinate belongs to via continent_rect
+                    int targetMapId = 0;
+                    for (auto& [mid, mr] : m_mapRects) {
+                        double x1 = std::min(mr.contRect[0], mr.contRect[2]);
+                        double x2 = std::max(mr.contRect[0], mr.contRect[2]);
+                        double y1 = std::min(mr.contRect[1], mr.contRect[3]);
+                        double y2 = std::max(mr.contRect[1], mr.contRect[3]);
+                        if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) { targetMapId = mid; break; }
+                    }
+
+                    double bestDist = 1e18;
+                    EntityCoord* bestEc = nullptr;
+                    for (auto& ec : m_entityCoords) {
+                        if (ec.source != EntityCoord::Sector) continue;
+                        if (targetMapId > 0 && ec.mapId != targetMapId) continue;
+                        double dx = ec.cx - cx, dy = ec.cy - cy;
+                        double d = dx * dx + dy * dy;
+                        if (d < bestDist) { bestDist = d; bestEc = &ec; }
+                    }
+                    if (bestEc) {
+                        bestEc->cx = cx;
+                        bestEc->cy = cy;
+                        bestEc->source = EntityCoord::Exact;
+                    }
+                }
+            }
+        }
 
         if (!entries.empty()) {
             json locs = json::array();
@@ -1066,5 +1356,14 @@ std::string FunctionHandler::HandleBuild(const json& args, const CancelCheck& ca
     if (!alts.empty()) result["alternatives"] = alts;
 
     return result.dump();
+}
+
+FunctionHandler::EntityData FunctionHandler::TakeEntityData() {
+    EntityData d;
+    d.coords = std::move(m_entityCoords);
+    d.rects = std::move(m_mapRects);
+    m_entityCoords.clear();
+    m_mapRects.clear();
+    return d;
 }
 

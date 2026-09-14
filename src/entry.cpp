@@ -11,17 +11,20 @@
 #include "core/ItemIndex.h"
 #include "core/FunctionHandler.h"
 #include "chat/ChatWindow.h"
+#include "map/MarkerOverlay.h"
 
 void AddonLoad(AddonAPI_t* aApi);
 void AddonUnload();
 void AddonRender();
 void AddonOptions();
+void OverlayRender();
 
 AddonDefinition_t AddonDef = {};
 HMODULE hSelf = nullptr;
 AddonAPI_t* APIDefs = nullptr;
 NexusLinkData_t* NexusLink = nullptr;
 Mumble::Data* MumbleLink = nullptr;
+Mumble::Identity* MumbleIdent = nullptr;
 
 ConfigManager* g_config = nullptr;
 Worker* g_worker = nullptr;
@@ -33,6 +36,8 @@ std::string g_configPath;
 std::string g_addonDir;
 bool g_showWindow = true;
 ImFont* g_font = nullptr;
+MarkerOverlay* g_overlay = nullptr;
+uint64_t g_lastEntitySeq = 0;
 
 static const char* QA_ID = "QA_CLAYMORE";
 static const char* KB_ID = "KB_CLAYMORE_TOGGLE";
@@ -56,8 +61,8 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.APIVersion = NEXUS_API_VERSION;
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
-    AddonDef.Version.Minor = 3;
-    AddonDef.Version.Build = 20;
+    AddonDef.Version.Minor = 4;
+    AddonDef.Version.Build = 0;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -83,6 +88,7 @@ void AddonLoad(AddonAPI_t* aApi) {
 
     NexusLink = (NexusLinkData_t*)APIDefs->DataLink_Get("DL_NEXUS_LINK");
     MumbleLink = (Mumble::Data*)APIDefs->DataLink_Get("DL_MUMBLE_LINK");
+    MumbleIdent = (Mumble::Identity*)APIDefs->DataLink_Get("DL_MUMBLE_LINK_IDENTITY");
 
     g_addonDir = APIDefs->Paths_GetAddonDirectory("claymore-asistan");
     std::filesystem::create_directories(g_addonDir);
@@ -103,14 +109,17 @@ void AddonLoad(AddonAPI_t* aApi) {
     g_itemIndex = new ItemIndex();
     g_itemIndex->Load(g_addonDir + "\\items_index.json");
     g_funcHandler = new FunctionHandler(g_gw2, g_itemIndex);
+    g_funcHandler->SetLogger(logger);
 
     g_chatWindow = new ChatWindow();
+    g_overlay = new MarkerOverlay();
     g_worker = new Worker();
     g_worker->Start(g_config, g_funcHandler, logger);
 
     g_showWindow = true;
 
     APIDefs->GUI_Register(RT_Render, AddonRender);
+    APIDefs->GUI_Register(RT_Render, OverlayRender);
     APIDefs->GUI_Register(RT_OptionsRender, AddonOptions);
     APIDefs->InputBinds_RegisterWithString(KB_ID, OnKeybind, "ALT+C");
     if (APIDefs->Textures_Get("ICON_CLAYMORE"))
@@ -124,7 +133,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.3.20 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.4.0 loaded.");
 
     // Field diagnostics for "works for everyone but me": Windows version, whether a proxy exists
     // that WinHTTP (DEFAULT_PROXY) would ignore, and the key's shape - never the key.
@@ -145,11 +154,13 @@ void AddonUnload() {
     g_font = nullptr;
 
     APIDefs->GUI_Deregister(AddonRender);
+    APIDefs->GUI_Deregister(OverlayRender);
     APIDefs->GUI_Deregister(AddonOptions);
     APIDefs->QuickAccess_Remove(QA_ID);
     APIDefs->InputBinds_Deregister(KB_ID);
 
     if (g_worker) { g_worker->Stop(); delete g_worker; g_worker = nullptr; }
+    if (g_overlay) { delete g_overlay; g_overlay = nullptr; }
     if (g_chatWindow) { delete g_chatWindow; g_chatWindow = nullptr; }
 
     if (g_itemIndex) {
@@ -175,11 +186,23 @@ void AddonRender() {
     if (f) ImGui::PopFont();
 }
 
+void OverlayRender() {
+    if (!g_overlay || !g_worker || !MumbleLink) return;
+
+    auto snap = g_worker->GetChatSnapshot();
+    if (snap.entitySeq != g_lastEntitySeq && snap.entitySeq > 0) {
+        g_lastEntitySeq = snap.entitySeq;
+        g_overlay->SetTarget(snap.entityCoords, snap.mapRects);
+    }
+
+    g_overlay->Render(MumbleLink, MumbleIdent, NexusLink);
+}
+
 void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v0.3.20");
+    ImGui::Text("Claymore Asistan v0.4.0");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 

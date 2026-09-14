@@ -2,9 +2,26 @@
 #include "GW2Client.h"
 #include "ItemIndex.h"
 #include <string>
+#include <vector>
+#include <map>
 #include <functional>
 #include <unordered_map>
 #include <json.hpp>
+
+struct EntityCoord {
+    std::string name;
+    int mapId = 0;
+    std::string mapName;
+    double cx = 0, cy = 0;
+    enum CoordSource { None, Exact, Sector } source = None;
+    bool hasCoord = false;
+    std::vector<std::string> areas;
+};
+
+struct MapRects {
+    double contRect[4] = {};
+    double mapRect[4] = {};
+};
 
 struct FunctionCall {
     std::string id;
@@ -23,6 +40,9 @@ public:
     using CancelCheck = std::function<bool()>;
 
     FunctionHandler(GW2Client* gw2, ItemIndex* index);
+
+    using LogFunc = std::function<void(const std::string&)>;
+    void SetLogger(LogFunc fn) { m_logger = std::move(fn); }
 
     FunctionResult Handle(const FunctionCall& call, CancelCheck shouldCancel = nullptr);
 
@@ -59,4 +79,16 @@ private:
     GW2Client* m_gw2;
     ItemIndex* m_index;
     std::unordered_map<int, GuideCache> m_guideCache;
+    std::function<void(const std::string&)> m_logger;
+
+    // Entity coord side-channel: written by HandleWiki (worker thread only), drained by Worker.
+    std::vector<EntityCoord> m_entityCoords;
+    std::map<int, MapRects> m_mapRects;
+
+public:
+    struct EntityData {
+        std::vector<EntityCoord> coords;
+        std::map<int, MapRects> rects;
+    };
+    EntityData TakeEntityData();
 };

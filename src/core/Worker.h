@@ -4,6 +4,7 @@
 #include "FunctionHandler.h"
 #include <vector>
 #include <string>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <atomic>
@@ -26,6 +27,9 @@ struct ChatSnapshot {
     std::string toolStatus;
     bool fallbackUsed = false;
     uint64_t generation = 0;
+    std::vector<EntityCoord> entityCoords;
+    std::map<int, MapRects> mapRects;
+    uint64_t entitySeq = 0;
 };
 
 class Worker {
@@ -66,7 +70,10 @@ private:
     std::string m_interactionId;
     std::string m_interactionModel;
     std::string m_keyProblem;
-    std::set<std::string> m_verifiedLinks;      // why the key cannot be sent ("" = fine); set in Start, read by the worker thread
+    std::set<std::string> m_verifiedLinks;
+    std::vector<EntityCoord> m_entityCoords;
+    std::map<int, MapRects> m_mapRects;
+    uint64_t m_entitySeq = 0;
 
     static const std::string SYSTEM_PROMPT;
     static constexpr int MAX_FC_ROUNDS = 6;

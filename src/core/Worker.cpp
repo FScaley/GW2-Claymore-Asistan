@@ -147,6 +147,10 @@ void Worker::ClearHistory() {
         m_snapshot.fallbackUsed = false;
         m_snapshot.toolStatus.clear();
         m_verifiedLinks.clear();
+        m_entityCoords.clear();
+        m_mapRects.clear();
+        m_snapshot.entityCoords.clear();
+        m_snapshot.mapRects.clear();
         m_interactionId.clear();
         m_interactionModel.clear();
     }
@@ -210,6 +214,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     bool initialFallback = resp.fallbackUsed;
     int fcRound = 0;
+    FunctionHandler::EntityData pendingEntity;
     while (resp.RequiresAction() && fcRound < MAX_FC_ROUNDS && IsGenerationCurrent(gen)) {
         fcRound++;
 
@@ -244,6 +249,11 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
             auto links = ExtractChatLinks(result.resultText);
             { std::lock_guard<std::mutex> lk(m_snapshotMutex); m_verifiedLinks.insert(links.begin(), links.end()); }
+
+            auto entityData = m_funcHandler->TakeEntityData();
+            if (!entityData.coords.empty()) {
+                pendingEntity = std::move(entityData);
+            }
 
             results.push_back({result.callId, {result.name, result.resultText}});
         }
@@ -289,6 +299,14 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_interactionId = resp.interactionId;
         m_interactionModel = resp.activeModel;
         m_snapshot.error.clear();
+        if (!pendingEntity.coords.empty()) {
+            m_entityCoords = std::move(pendingEntity.coords);
+            m_mapRects = std::move(pendingEntity.rects);
+            ++m_entitySeq;
+            m_snapshot.entityCoords = m_entityCoords;
+            m_snapshot.mapRects = m_mapRects;
+            m_snapshot.entitySeq = m_entitySeq;
+        }
     } else {
         std::string errText;
         if (resp.statusCode == 429) {

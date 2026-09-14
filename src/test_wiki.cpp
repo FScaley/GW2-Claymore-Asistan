@@ -488,6 +488,26 @@ int main() {
         Check(rc.resultText.find("cancelled") != std::string::npos, "cancel is honored");
     }
 
+    // --- TEST N: map_rect parse (v0.4.0) ---
+    printf("\n--- TEST N: map_rect parse ---\n");
+    {
+        for (int mapId : {23, 1288, 1185}) {
+            auto m = gw2.GetMap(mapId);
+            printf("  map %d (%s): hasMapRect=%d mapRect=[[%.0f,%.0f],[%.0f,%.0f]]\n",
+                   mapId, m.name.c_str(), m.hasMapRect,
+                   m.mapRect[0][0], m.mapRect[0][1], m.mapRect[1][0], m.mapRect[1][1]);
+            Check(m.found, (std::string("map ") + std::to_string(mapId) + " found").c_str());
+            Check(m.hasMapRect, (std::string("map ") + std::to_string(mapId) + " hasMapRect").c_str());
+            Check(m.hasContRect, (std::string("map ") + std::to_string(mapId) + " hasContRect").c_str());
+            if (m.hasMapRect) {
+                double w = m.mapRect[1][0] - m.mapRect[0][0];
+                double h = m.mapRect[1][1] - m.mapRect[0][1];
+                Check(w > 0 && h > 0,
+                      (std::string("map ") + std::to_string(mapId) + " mapRect non-degenerate").c_str());
+            }
+        }
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }

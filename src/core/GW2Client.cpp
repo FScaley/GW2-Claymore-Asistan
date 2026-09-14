@@ -208,6 +208,16 @@ GW2MapInfo GW2Client::GetMap(int id) {
                 m.hasContRect = true;
             }
         }
+        if (j.contains("map_rect") && j["map_rect"].is_array() && j["map_rect"].size() == 2) {
+            auto& r = j["map_rect"];
+            if (r[0].is_array() && r[1].is_array() && r[0].size() == 2 && r[1].size() == 2) {
+                m.mapRect[0][0] = r[0][0].get<double>();
+                m.mapRect[0][1] = r[0][1].get<double>();
+                m.mapRect[1][0] = r[1][0].get<double>();
+                m.mapRect[1][1] = r[1][1].get<double>();
+                m.hasMapRect = true;
+            }
+        }
         m.defaultFloor = j.value("default_floor", 1);
         if (j.contains("floors") && j["floors"].is_array())
             for (auto& f : j["floors"])
@@ -252,6 +262,18 @@ GW2MapInfo GW2Client::GetMapWithWaypoints(int mapId) {
                 }
                 if (!wp.name.empty() && !wp.chatLink.empty())
                     mapInfo.waypoints.push_back(std::move(wp));
+            }
+            if (j.contains("sectors") && j["sectors"].is_object()) {
+                for (auto& [key, sec] : j["sectors"].items()) {
+                    GW2Sector s;
+                    s.name = sec.value("name", "");
+                    if (sec.contains("coord") && sec["coord"].is_array() && sec["coord"].size() == 2) {
+                        s.x = sec["coord"][0].get<double>();
+                        s.y = sec["coord"][1].get<double>();
+                    }
+                    if (!s.name.empty())
+                        mapInfo.sectors.push_back(std::move(s));
+                }
             }
         } catch (...) {
             continue;

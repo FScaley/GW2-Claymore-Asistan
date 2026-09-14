@@ -105,6 +105,8 @@ exit /b 0</Command>
     <ClCompile Include="core\Worker.cpp" />
     <ClCompile Include="chat\ChatWindow.cpp" />
     <ClCompile Include="chat\Markdown.cpp" />
+    <ClCompile Include="map\MapMath.cpp" />
+    <ClCompile Include="map\MarkerOverlay.cpp" />
     <ClCompile Include="imgui\imgui.cpp" />
     <ClCompile Include="imgui\imgui_draw.cpp" />
     <ClCompile Include="imgui\imgui_tables.cpp" />
@@ -121,6 +123,8 @@ exit /b 0</Command>
     <ClInclude Include="core\Worker.h" />
     <ClInclude Include="chat\ChatWindow.h" />
     <ClInclude Include="chat\Markdown.h" />
+    <ClInclude Include="map\MapMath.h" />
+    <ClInclude Include="map\MarkerOverlay.h" />
     <ClInclude Include="nexus\Nexus.h" />
     <ClInclude Include="mumble\Mumble.h" />
   </ItemGroup>
