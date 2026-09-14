@@ -217,19 +217,32 @@ Detaylar: `faz0-rapor.md`
 - ItemIndex periodic save: her 20 yeni item eklendiginde otomatik diske kaydeder. Oyun cikisinda AddonUnload calismazsa bile cache korunur
 - Testler: A-L yesil. MSBuild Release derlendi
 
+**v0.3.19 (14 Eylul 2026) — gw2_build tool, metabattle.com entegrasyonu:**
+- Ayrintili notlar v0.3.19 commit'inde
+
+**v0.3.20 (14 Eylul 2026) — Faz 2 cilalamasi: ikon, rating-widget, proxy maskeleme, guide relevance, prompt scope:**
+- Quick Access ikon duzeltildi: wiki goruntu URL'si yanlisti (`/images/3/37/` → `/images/5/50/`), `Textures_GetOrCreateFromURL` (Nexus cache) ile `QuickAccess_Add`'den once cagriliyor. Tek ikon tanimlayicisi (normal ve hover). Dogrulama yalnizca oyun icinde (log satiri yok + ikon gorunur)
+- metabattle rating-widget boilerplate temizlendi: `build-header` HtmlToText skip listesine eklendi. test_wiki M "Our curator" kontrolu eklendi
+- Proxy credential maskeleme: `ProxyField()` artik `MaskProxyCredentials` uyguluyor — `user:pass@` iceren proxy dizeleri `****@host` olarak loglanir. Public static `HttpClient::MaskProxyCredentials` testlenebilir (test_wiki I'da 3 kontrol)
+- Guide relevance guard: `GuideSearch` artik sonuclari `TitleScore` ile yeniden siralar (herhangi bir sonuc >0 skora sahipse). Skor 0 ise WordPress sirasi korunur (Turkce/paraphrase sorgular icin dusmesin). `SearchWords`+`TitleScore` zaten GW2Client.cpp'de mevcut
+- COMPLETENESS RULE scope: "NOT to items inside sub_collections, which follow COLLECTION RULE exactly" eklendi — iki kural arasi oncelik belirginlestirildi
+- verifiedLinks guide/build trust surface: kabul edildi — her iki site guvenilir, risk sayfa ele gecirmesi; source bazli ayirma maliyet/fayda oraninda degmez
+- FC loop exhaustion: ertelendi — v0.3.2 dersi (tool'suz tekrar sorma = halusinasyon kaynagi) gecerli; API davranisi dogrulanmadan yapilmaz; 6-tur limiti v0.3.10'dan beri nadiren dolur
+- Testler: test_wiki A-M yesil (0 failure), test_markdown yesil, MSBuild Release derlendi
+
 **Faz 2 kalan (ertelenmis / kosullu):**
-- COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
+- ~~COLLECTION vs COMPLETENESS catismasi~~ — v0.3.20: COMPLETENESS RULE'a "NOT to items inside sub_collections, which follow COLLECTION RULE exactly" scope cumlesi eklendi. Etki henuz test_gemini ile olculemedi; Lite davranisi %100 guvenilir olmayabilir (prompt kurali, model garantisi degil)
 - ~~Guide per-session cache~~ — v0.3.16'da eklendi (search hala tekrar calisir)
 - snowcrows.com (PvE raid build) ve metabattle.com (genel build, MediaWiki) entegrasyonu — feasibility dogrulandi (SSR, robots.txt acik), kullanici onceligi dusuk ("buildler cok onemli degil"); gw2mists.com dustu (SPA, API 403)
-- verifiedLinks guide trust surface: guildjen kodlari otomatik verified — guvenilir ama prensipte riskli; source bazli ayirma dusunulebilir
-- Guide relevance guard: top-hit her zaman isabetli olmayabilir; skor/keyword eslesmesi kontrolu
+- verifiedLinks guide/build trust surface: guildjen ve metabattle kodlari otomatik verified — her iki site guvenilir topluluk kaynagi, risk yalnizca sayfa ele gecirmesi; source bazli ayirma maliyet/fayda oraninda degmez. **Karar: kabul edildi (v0.3.20)**
+- ~~Guide relevance guard~~ — v0.3.20: `GuideSearch` artik `TitleScore` ile re-rank yapar (herhangi bir sonuc >0 skora sahipse). Skor 0 ise WordPress sirasini korur (Turkce/paraphrase sorgu icin). `SearchWords`+`TitleScore` GW2Client.cpp'de anonymous namespace'te, paylasimli
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
 - ~~"Neden turuncu" tooltip~~ — v0.3.17'de eklendi
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
-- `Diagnostics()` proxy dizesinde `user:pass@` maskeleme — `Ortam:` satirinda herhangi bir proxy gorulurse
+- ~~`Diagnostics()` proxy dizesinde `user:pass@` maskeleme~~ — v0.3.20'de eklendi (`MaskProxyCredentials`, test_wiki I'da 3 kontrol)
 - ~~vcxproj'a `NOMINMAX`~~ — v0.3.17'de eklendi; `std::min` workaround'i kaldirildi
 - ~~`model_chain` icin Options UI~~ — v0.3.18'de eklendi (dropdown + reorder butonlari)
-- Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
+- ~~Quick Access ikon texture'i (`QA_CLAYMORE`)~~ — v0.3.20: URL duzeltildi (`/images/3/37/` → `/images/5/50/`), `Textures_GetOrCreateFromURL` + `QuickAccess_Add` sirasi duzeltildi
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
 - Wiki icerik cache (`mapId → GW2MapInfo` bellek ici) — yalnizca FC log ms sutunu NPC aramalarinin cok yavas oldugunu gosterirse
 - ~~imgui_markdown~~ (v0.3.8'de markdown-lite renderer ile kapatildi — imgui_markdown reddedildi, yukariya bak)
