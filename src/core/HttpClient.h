@@ -50,6 +50,7 @@ public:
     static std::string Diagnostics();                       // OS version + WinHTTP/user proxy configuration + fallback support; no secrets
 
     static HttpTimeouts TimeoutsFor(int budgetMs);          // pure; unit-tested in test_wiki J
+    static std::string MaskProxyCredentials(const std::string& s);  // redact user:pass@ in proxy strings
     bool IPv6FastFallback() const { return m_ipv6FastFallback; }   // session accepted WINHTTP_OPTION_IPV6_FAST_FALLBACK
 
 private:

@@ -21,8 +21,32 @@ std::string WideToUtf8(const wchar_t* w) {
     return out;
 }
 
+std::string MaskCredentials(const std::string& s) {
+    std::string out;
+    size_t pos = 0;
+    while (pos < s.size()) {
+        auto at = s.find('@', pos);
+        if (at == std::string::npos) { out += s.substr(pos); break; }
+        size_t start = pos;
+        for (auto sep : {"://", "=", ";"}) {
+            auto f = s.rfind(sep, at);
+            if (f != std::string::npos) {
+                size_t candidate = f + std::strlen(sep);
+                if (candidate > start) start = candidate;
+            }
+        }
+        if (start >= at) start = (pos < at) ? pos : at;
+        out += s.substr(pos, start - pos);
+        out += "****@";
+        pos = at + 1;
+    }
+    return out;
+}
+
 std::string ProxyField(LPWSTR s) {
-    return (s && *s) ? WideToUtf8(s) : std::string("-");
+    if (!s || !*s) return "-";
+    std::string utf8 = WideToUtf8(s);
+    return MaskCredentials(utf8);
 }
 
 } // namespace
@@ -312,4 +336,8 @@ std::string HttpClient::Diagnostics()
     }
 
     return out;
+}
+
+std::string HttpClient::MaskProxyCredentials(const std::string& s) {
+    return MaskCredentials(s);
 }

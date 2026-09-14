@@ -182,7 +182,8 @@ std::string HtmlToText(const std::string& html) {
                 std::string id = ExtractAttr(attrs, "id");
                 if (ClassHasAny(cls, {"toc", "navbox", "mw-editsection", "noprint",
                                       "infobox", "thumb", "mw-references-wrap",
-                                      "catlinks", "printfooter", "mw-indicators"})
+                                      "catlinks", "printfooter", "mw-indicators",
+                                      "build-header"})
                     || ToLower(id) == "toc") {
                     skipTag = name; skipDepth = 1; continue;
                 }

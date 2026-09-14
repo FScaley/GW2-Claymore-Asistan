@@ -277,6 +277,13 @@ int main() {
         Check(!problem.empty() && problem.find("5.") != std::string::npos, "inner non-ASCII byte reported at position 5");
         Check(!ConfigManager::ApiKeyProblem("FAKE 123").empty(), "inner space reported");
         Check(problem.find("FAKE") == std::string::npos, "problem text never echoes the key");
+
+        Check(HttpClient::MaskProxyCredentials("http://user:pass@proxy.example.com:8080")
+              == "http://****@proxy.example.com:8080", "MaskProxyCredentials masks user:pass before @");
+        Check(HttpClient::MaskProxyCredentials("proxy.example.com:8080")
+              == "proxy.example.com:8080", "MaskProxyCredentials leaves no-@ string alone");
+        Check(HttpClient::MaskProxyCredentials("http=user:p@a:80;https=u:p@b:443")
+              == "http=****@a:80;https=****@b:443", "MaskProxyCredentials handles multi-segment proxies");
     }
 
     printf("\n=== J: IPv6 fast fallback + connect timeout cap ===\n");
@@ -326,6 +333,12 @@ int main() {
         Check(j.value("source", "") == "guildjen", "source is guildjen");
         Check(!j.value("modified", "").empty(), "modified date present");
 
+        json related = j.value("related", json::array());
+        printf("search results: [%s]", title.c_str());
+        for (size_t i = 0; i < related.size(); ++i)
+            printf(", [%s]", related[i].get<std::string>().c_str());
+        printf("\n");
+
         json secs = j.value("sections", json::array());
         printf("sections: %zu\n", secs.size());
         Check(secs.size() >= 2, "at least 2 sections");
@@ -334,7 +347,8 @@ int main() {
 
         std::string content = j.value("content", "");
         printf("content_size=%zu\n", content.size());
-        Check(content.size() > 100 && content.size() < 14 * 1024, "content between 100 and 14KB");
+        Check(content.size() > 2000 && content.size() < 14 * 1024,
+              "content is a real guide (>2KB), not just a link index");
         Check(content.find("wp-block") == std::string::npos, "no wp-block leak");
         Check(content.find("srcset") == std::string::npos, "no srcset leak");
         Check(content.find("tiled-gallery") == std::string::npos, "no gallery leak");
@@ -449,6 +463,7 @@ int main() {
         Check(content.size() > 100 && content.size() < 14 * 1024, "content between 100 and 14KB");
         Check(content.find("data-") == std::string::npos, "no data- attribute leak");
         Check(content.find("tooltip") == std::string::npos, "no tooltip leak");
+        Check(content.find("Our curator") == std::string::npos, "no rating-widget boilerplate leak");
 
         json secs = j.value("sections", json::array());
         printf("sections: %zu\n", secs.size());

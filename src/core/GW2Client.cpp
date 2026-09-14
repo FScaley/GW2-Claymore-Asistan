@@ -453,6 +453,32 @@ std::vector<GuideSearchResult> GW2Client::GuideSearch(const std::string& query, 
                 results.push_back(std::move(r));
         }
     } catch (...) {}
+
+    if (results.size() > 1) {
+        auto queryWords = SearchWords(query);
+        if (!queryWords.empty()) {
+            auto SharedCount = [&](const std::string& title) -> int {
+                auto titleWords = SearchWords(title);
+                int shared = 0;
+                for (auto& tw : titleWords)
+                    for (auto& qw : queryWords)
+                        if (WordsMatch(tw, qw)) { ++shared; break; }
+                return shared;
+            };
+            int topShared = SharedCount(results[0].title);
+            bool anyBetter = false;
+            for (size_t i = 1; i < results.size(); ++i) {
+                if (SharedCount(results[i].title) > topShared) { anyBetter = true; break; }
+            }
+            if (anyBetter) {
+                std::stable_sort(results.begin(), results.end(),
+                    [&](const GuideSearchResult& a, const GuideSearchResult& b) {
+                        return SharedCount(a.title) > SharedCount(b.title);
+                    });
+            }
+        }
+    }
+
     return results;
 }
 
