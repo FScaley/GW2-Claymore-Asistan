@@ -33,13 +33,13 @@ Output: `build\Release\claymore-asistan.dll`. Post-build copies to `E:\Guild War
 cl /EHsc /std:c++17 /MT /utf-8 test_markdown.cpp chat/Markdown.cpp
 
 # Wiki path only — ZERO Gemini cost (wiki + GW2 API), no API key needed:
-cl /EHsc /std:c++17 /permissive- /MT /I"../include" test_wiki.cpp core/HttpClient.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/ConfigManager.cpp /link winhttp.lib
+cl /EHsc /std:c++17 /permissive- /DNOMINMAX /MT /I"../include" test_wiki.cpp core/HttpClient.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/ConfigManager.cpp /link winhttp.lib
 
 # Full suite — live Gemini + GW2 API:
-cl /EHsc /std:c++17 /permissive- /MT /I"../include" test_gemini.cpp core/HttpClient.cpp core/GeminiClient.cpp core/ConfigManager.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/Worker.cpp /link winhttp.lib
+cl /EHsc /std:c++17 /permissive- /DNOMINMAX /MT /I"../include" test_gemini.cpp core/HttpClient.cpp core/GeminiClient.cpp core/ConfigManager.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/Worker.cpp /link winhttp.lib
 ```
 
-`/permissive-` mirrors the vcxproj's `ConformanceMode` — keep the test lines and the project in the same mode. Without it the test build accepted `std::min` next to Windows.h's `min` macro (no `NOMINMAX` in the project) and only MSBuild failed (v0.3.13). A green test build is not proof the DLL builds.
+`/permissive-` mirrors the vcxproj's `ConformanceMode`; `/DNOMINMAX` mirrors the vcxproj's preprocessor define (added v0.3.17). Both are needed because test builds compile outside MSBuild. `std::min`/`std::max` can now be used freely in any TU — the v0.3.13 ternary workaround is no longer needed. A green test build is not proof the DLL builds.
 
 `test_markdown.exe` — pure parser test for the chat renderer (`chat/Markdown.cpp`), no network. Feeds the literal TEST 5 and TEST 6 Gemini answers plus an edge-case block; asserts 3 level-3 headers + 27 bullets on the Roller Beetle answer, `* **bold**` → Bullet with Bold first token, backtick-wrapped `` `[&BLoDAAA=]` `` → one ChatLink token with zero backticks left, `1.`/`2)` numbered, nested indent, `---`/`***` rules, stray `**`/`` ` `` dropped without leaving lone-space tokens. **Regression gate for any change to `Markdown.cpp` or `ChatWindow::RenderFormattedText`.** Layout (indent/wrap/spacing) is NOT covered — that needs an in-game look.
 
@@ -124,15 +124,15 @@ cl /EHsc /std:c++17 /permissive- /MT /I"../include" test_gemini.cpp core/HttpCli
 ### Known Limitations (v0.3.16)
 
 - **Location enrichment latency.** Each section-derived map triggers `ResolveMapId` + `GetMapWithWaypoints` (~1s each). Gharr Leadclaw adds 3 extra maps; worst case is `LOCATION_MAP_CAP=6` maps × ~1s = ~6s added to the wiki call. Acceptable for NPC queries but noticeable.
-- **Section-derived entries push the map name into `areas[]`**, not the actual area (the next `- ` line). If a section-derived entry ever sorts first via `npc_here`, `location_area` will be the map name instead of the area name. Low impact — `npc_here` comes from infobox coordinates which are always on infobox-derived entries.
-- **`m_interactionId.clear()` in `ClearHistory` is unprotected** — the same sibling race as the now-fixed `m_verifiedLinks`. SSO string (no heap nodes) makes it practically safe but not formally correct. Logged for future fix.
+- **Section-derived entries push the map name into `areas[]`**, not the actual area. ~~Fixed in v0.3.17~~: area capture now reads the second `- ` line (e.g. "Pact Base Camp") from the Locations section.
+- **`m_interactionId.clear()` in `ClearHistory` is unprotected.** ~~Fixed in v0.3.17~~: `m_interactionId` and `m_interactionModel` moved inside `m_snapshotMutex` in `ClearHistory`.
 - **Guide cache saves the content fetch but not the search.** `section=` on a cached guide skips `GuideGetContent` but still runs `GuideSearch` to find the post id. One HTTP call saved of two.
 
 ### Known Limitations (v0.3.15)
 
 - **guildjen.com has AAAA records (Cloudflare `2606:4700:…`).** Same IPv6 dead-path class as Google — a user with broken IPv6 will time out on guide fetches too. v0.3.13 fast fallback covers the WinHTTP side; Cloudflare bot-detection (TLS fingerprint) is an additional risk — test_wiki K is the real probe; if it returns 403 or a ~3KB challenge page, that's Cloudflare, not our code.
 - **Guide chat codes enter `verifiedLinks`.** `[&…]` codes in guildjen's HTML pass through `ExtractChatLinks` and are treated as verified just like GW2 API codes. Trusted for guildjen (reputable site) but this is a new trust surface — a compromised or malicious guide page could inject fake codes that bypass `StripUnverifiedChatLinks`.
-- **Per-session guide cache not implemented.** `section=` repeats both HTTP calls (search + content fetch). Low impact at current usage but wasteful for repeat queries on the same guide.
+- **Per-session guide cache not implemented.** ~~Fixed in v0.3.16~~: cache by post id; `section=` skips content fetch. Search call still runs to find the post id.
 - **gw2mists.com dropped** (pure SPA, API returns 403 — WinHTTP cannot render JavaScript). **snowcrows.com and metabattle.com deferred** — feasibility confirmed (SSR content available) but builds are lower priority per user ("buildler çok önemli değil").
 - **Top-hit only, no relevance guard.** `gw2_guide` returns the first WordPress search result; if the query is vague the top hit may not match the intent. TEST 12's query ("fishing guide") was a strong match; weaker queries are untested.
 
@@ -148,7 +148,7 @@ cl /EHsc /std:c++17 /permissive- /MT /I"../include" test_gemini.cpp core/HttpCli
 
 - The IPv6 fast fallback cannot be observed on the development machine: it has no IPv6 at all (`curl -6` → `Could not resolve host`), so WinHTTP never attempts IPv6 here and test J only proves the option is accepted and the budgets are right. The behavioural proof is the affected user's first question after updating (log shows `IPv6 hizli geri donus: acik`, answer arrives). On Windows 8.0 or older the option is refused and the load line says `desteklenmiyor (code)`; behaviour there is the pre-v0.3.13 one.
 - The connect cap is 10 s per address attempt, not a cap on the whole connect phase (WinHTTP documentation; not measured here); with several dead addresses WinHTTP can still spend more than 10 s before it reaches a live one. Fast fallback makes that moot for the IPv6 case, not for a firewall that drops every address.
-- The project does not define `NOMINMAX`; any TU that includes Windows.h must avoid bare `std::min`/`std::max` (use a ternary or `(std::min)(a, b)`). Adding `NOMINMAX` to the vcxproj is a small separate change.
+- ~~The project does not define `NOMINMAX`.~~ **Fixed in v0.3.17**: `NOMINMAX` added to vcxproj (Debug + Release). `std::min`/`std::max` can now be used freely; the ternary workaround in `HttpClient::TimeoutsFor` was replaced with `std::min`. Fallback tooltip added to the orange "(yedek)" model tag in ChatWindow.
 
 - `HttpClient` opens its session with `WINHTTP_ACCESS_TYPE_DEFAULT_PROXY`: it honours the `netsh winhttp` proxy and **ignores the user's browser/system proxy** (VPN clients in proxy mode, corporate PAC files). Such a machine shows the browser working and the addon failing with 12029/12002 while the load line reads `WinHTTP proxy: dogrudan | kullanici proxy: … proxy=<host>`. Not switched to `WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` on purpose: no field evidence yet, and it adds WPAD autodetect latency to the first request for everyone. Do it in v0.3.13 only if a log shows that pattern. The mirror case — a stale `netsh winhttp` proxy while the browser goes direct — shows as `WinHTTP proxy: <host>`; fix on that machine: `netsh winhttp reset proxy` (admin).
 - `Diagnostics()` prints proxy strings verbatim; a `user:pass@host` proxy would put credentials into `Nexus.log`. Rare in IE/netsh configuration; redact before `@` if any field `Ortam:` line ever shows a proxy at all.

@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.16 bugfix/prompt/kaynak)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.17 bugfix/prompt/kaynak)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -204,18 +204,24 @@ Detaylar: `faz0-rapor.md`
 - Em-dash literal `\xe2\x80\x94` (ASCII kaynak kurali). Cap sabiti `LOCATION_MAP_CAP = 6`
 - Testler: test_wiki L (Gharr ≥5 location + Dragon's Stand Pact Base Camp waypoint); F Gorrik 3→6 regresyon yok; A-L yesil. test_gemini TEST 10 turn 1: 6/6 gercek kodlar, turn 2: 0 stripped; -1/-1b/0-12 yesil
 
+**v0.3.17 (14 Eylul 2026) — NOMINMAX, thread safety, turuncu tooltip, area capture:**
+- NOMINMAX vcxproj'a eklendi (Debug + Release). HttpClient::TimeoutsFor'daki ternary workaround `std::min` ile degistirildi. `std::min`/`std::max` artik tum TU'larda guvenle kullanilabilir
+- m_interactionId ve m_interactionModel ClearHistory'de m_snapshotMutex altina alindi (v0.3.16 verifiedLinks race fix'inin kardesi)
+- Turuncu "(yedek)" model etiketine tooltip: "Birincil model kota asiminda - yedek model kullanildi. Free API key ile normaldir."
+- Locations section area capture: section-derived entries artik harita adi yerine gercek alan adini (ikinci `- ` satiri, orn. "Pact Base Camp") aliyor
+- Testler: A-L + -1/-1b/0-12 yesil. MSBuild NOMINMAX ile derlendi, `std::min` calisiyor
+
 **Faz 2 kalan (ertelenmis / kosullu):**
-- Locations section area capture: section-derived entries harita adini areas[]'a koyuyor, gercek bolge adini (sonraki `- ` satiri) degil — dusuk oncelik, npc_here infobox'tan gelir
 - COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
-- Guide per-session cache: post id bazli cache, section= tekrar fetch yapmasin
+- ~~Guide per-session cache~~ — v0.3.16'da eklendi (search hala tekrar calisir)
 - snowcrows.com (PvE raid build) ve metabattle.com (genel build, MediaWiki) entegrasyonu — feasibility dogrulandi (SSR, robots.txt acik), kullanici onceligi dusuk ("buildler cok onemli degil"); gw2mists.com dustu (SPA, API 403)
 - verifiedLinks guide trust surface: guildjen kodlari otomatik verified — guvenilir ama prensipte riskli; source bazli ayirma dusunulebilir
 - Guide relevance guard: top-hit her zaman isabetli olmayabilir; skor/keyword eslesmesi kontrolu
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
-- "Neden turuncu" tooltip'i (kota mi, anlik 429 mu) — kucuk UI isi
+- ~~"Neden turuncu" tooltip~~ — v0.3.17'de eklendi
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
 - `Diagnostics()` proxy dizesinde `user:pass@` maskeleme — `Ortam:` satirinda herhangi bir proxy gorulurse
-- vcxproj'a `NOMINMAX` (Windows.h min/max makrolari; v0.3.13'te `std::min` MSBuild'de patladi) — kucuk, ayri commit
+- ~~vcxproj'a `NOMINMAX`~~ — v0.3.17'de eklendi; `std::min` workaround'i kaldirildi
 - `model_chain` icin Options UI yok — eski kurulumlarda (arkadas, v0.3.0) Lite-once zincir config.json'da kalici; elle duzenleme veya UI
 - Quick Access ikon texture'i (`QA_CLAYMORE`) — kaynak/yol kontrolu, kozmetik
 - Tur limiti dolunca "elindeki veriyle simdi cevapla" zarif bitis (function_result yanina text input?) — API davranisi dogrulanmadan yapilmaz; v0.3.2 dersi: tool'suz tekrar sorma YOK
