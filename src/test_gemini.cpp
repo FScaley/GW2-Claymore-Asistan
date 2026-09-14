@@ -479,6 +479,48 @@ int main(int argc, char** argv) {
                sources, hasVendor, hasChest, hasStory, hasGather);
     }
 
+    printf("\n=== TEST 12: Guide FC loop (Worker) — Fishing guide ===\n");
+    {
+        GW2Client gw2t;
+        ItemIndex idxt;
+        FunctionHandler fht(&gw2t, &idxt);
+        std::vector<std::string> logs;
+        Worker w;
+        w.Start(&config, &fht, [&logs](const std::string& m) {
+            logs.push_back(m);
+            printf("  [LOG] %s\n", m.c_str());
+        });
+        w.RequestChat("balik tutma nasil yapilir, nereden baslarim?");
+        for (int i = 0; i < 900; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!w.GetChatSnapshot().busy) break;
+        }
+        auto snap = w.GetChatSnapshot();
+        w.Stop();
+        std::string all;
+        for (auto& m : snap.messages) {
+            const char* role = m.role == ChatMessage::User ? "USER" :
+                              (m.role == ChatMessage::Assistant ? "ASST" : "SYS");
+            printf("[%s] %s\n", role, m.text.c_str());
+            if (m.role == ChatMessage::Assistant) all += m.text;
+        }
+        printf("model=%s fallback=%d error=%s\n",
+               snap.activeModel.c_str(), snap.fallbackUsed, snap.error.c_str());
+
+        bool fcGuide = false;
+        bool fcWiki = false;
+        for (auto& l : logs) {
+            if (l.find("FC gw2_guide") != std::string::npos) fcGuide = true;
+            if (l.find("FC gw2_wiki") != std::string::npos) fcWiki = true;
+        }
+        bool fcWikiOnly = fcWiki && !fcGuide;
+        bool sourceNamed = all.find("guildjen") != std::string::npos
+                        || all.find("rehber") != std::string::npos;
+
+        printf("checks: fc_guide=%d fc_wiki_only=%d source_named=%d\n",
+               fcGuide, fcWikiOnly, sourceNamed);
+    }
+
     printf("\n=== TEST 9: consecutive 429 -> escalating cooldown (observational) ===\n");
     {
         // Flash-first on purpose: two real attempts 31 s apart. While the daily Flash quota is

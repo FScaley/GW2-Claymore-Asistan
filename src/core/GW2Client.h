@@ -85,6 +85,20 @@ struct WikiPage {
     bool found = false;
 };
 
+struct GuideSearchResult {
+    int id = 0;
+    std::string title;
+    std::string selfHref;   // full REST URL for the resource (posts/N or pages/N)
+};
+
+struct GuidePage {
+    std::string title;
+    std::string url;
+    std::string modified;   // ISO 8601 e.g. "2026-08-14T14:25:59"
+    std::string html;       // content.rendered — article-only HTML
+    bool found = false;
+};
+
 class GW2Client {
 public:
     GW2Item GetItem(int id);
@@ -103,11 +117,15 @@ public:
     WikiPage WikiGetPage(const std::string& title);
     WikiPage WikiGetPageHtml(const std::string& title);
 
+    std::vector<GuideSearchResult> GuideSearch(const std::string& query, int limit = 5);
+    GuidePage GuideGetContent(const std::string& selfHref);
+
     static std::string FormatPrice(int copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);
 
     static constexpr const char* API_HOST = "api.guildwars2.com";
     static constexpr const char* WIKI_HOST = "wiki.guildwars2.com";
+    static constexpr const char* GUIDE_HOST = "guildjen.com";
 
     // Receives "[HTTP] host/path -> WinHttp... code" when a GET gets no response at all.
     using LogFunc = std::function<void(const std::string&)>;

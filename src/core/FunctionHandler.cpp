@@ -142,6 +142,8 @@ FunctionResult FunctionHandler::Handle(const FunctionCall& call, CancelCheck sho
         result.resultText = HandleMap(call.arguments, shouldCancel);
     else if (call.name == "gw2_wiki")
         result.resultText = HandleWiki(call.arguments, shouldCancel);
+    else if (call.name == "gw2_guide")
+        result.resultText = HandleGuide(call.arguments, shouldCancel);
     else
         result.resultText = "{\"error\": \"Unknown function: " + call.name + "\"}";
 
@@ -213,6 +215,26 @@ json FunctionHandler::GetToolDefinitions() {
                 {"section", {
                     {"type", "string"},
                     {"description", "Optional. Exact section title from a previous result's 'sections' list (e.g. 'Unlocking', 'Acquisition') to fetch that section in full."}
+                }}
+            }},
+            {"required", json::array({"query"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_guide"},
+        {"description", "Search guildjen.com for a community guide and return it as readable text. Use for step-by-step walkthroughs, farming routes, leveling/gearing strategy, mode introductions (WvW/PvP/fractals/raids), and 'en iyi yol' questions. NOT for collection or achievement item lists (those come from gw2_wiki). The result includes a 'modified' date showing when the guide was last updated."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"query", {
+                    {"type", "string"},
+                    {"description", "Short English keywords for the guide topic (e.g. 'fishing guide', 'wvw beginner', 'legendary armor raid', 'gold farming'). Keep it concise — 2-4 words."}
+                }},
+                {"section", {
+                    {"type", "string"},
+                    {"description", "Optional. Exact section title from a previous result's 'sections' list to fetch that section in full when content was truncated."}
                 }}
             }},
             {"required", json::array({"query"})}
@@ -656,6 +678,92 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             result["nearby_waypoints"] = entries[0].waypoints;
         }
         if (!otherAreas.empty()) result["other_locations"] = otherAreas;
+    }
+
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleGuide(const json& args, const CancelCheck& cancel) {
+    std::string query = args.value("query", "");
+    std::string sectionWanted = TrimStr(args.value("section", ""));
+    if (query.empty()) return "{\"error\": \"query parameter required\"}";
+
+    auto results = m_gw2->GuideSearch(query, 5);
+    if (results.empty())
+        return "{\"error\": \"No guide found for: " + query + "\"}";
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    auto& top = results[0];
+    auto page = m_gw2->GuideGetContent(top.selfHref);
+    if (!page.found)
+        return "{\"error\": \"Guide content not available: " + top.title + "\"}";
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    std::string text = WikiText::HtmlToText(page.html);
+
+    // WordPress uses <h1> for top-level sections; normalize to ## so SplitLead finds them.
+    std::string normalized;
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        auto nl = text.find('\n', pos);
+        std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+        pos = (nl == std::string::npos) ? text.size() + 1 : nl + 1;
+        if (line.size() > 2 && line.compare(0, 2, "# ") == 0 && (line.size() < 3 || line[2] != '#'))
+            normalized += "## " + line.substr(2) + "\n";
+        else
+            normalized += line + "\n";
+    }
+    text = normalized;
+
+    std::vector<WikiSection> sections;
+    std::string lead = WikiText::SplitLead(text, sections);
+    json sectionNames = json::array();
+    for (auto& s : sections) sectionNames.push_back(s.title);
+
+    std::string content;
+    if (!sectionWanted.empty()) {
+        std::string want = LowerStr(sectionWanted);
+        for (auto& s : sections) {
+            if (LowerStr(s.title) == want) {
+                content = "## " + s.title + "\n" + s.body;
+                if (content.size() > GUIDE_TEXT_BUDGET)
+                    content = content.substr(0, GUIDE_TEXT_BUDGET) + "\n... (truncated)";
+                break;
+            }
+        }
+        if (content.empty())
+            return "{\"error\": \"Section not found: " + sectionWanted + "\"}";
+    }
+
+    if (content.empty()) {
+        content = lead;
+        for (auto& s : sections) {
+            if (content.size() >= GUIDE_TEXT_BUDGET) break;
+            std::string chunk = "\n\n## " + s.title + "\n" + s.body;
+            if (content.size() + chunk.size() > GUIDE_TEXT_BUDGET) {
+                size_t room = GUIDE_TEXT_BUDGET - content.size();
+                content += chunk.substr(0, room);
+                content += "\n... (truncated - call gw2_guide with section='" + s.title + "' for the rest)";
+                break;
+            }
+            content += chunk;
+        }
+    }
+
+    json result;
+    result["source"] = "guildjen";
+    result["title"] = page.title;
+    result["url"] = page.url;
+    if (!page.modified.empty())
+        result["modified"] = page.modified.substr(0, 10);
+    result["content"] = content;
+    if (!sectionNames.empty()) result["sections"] = sectionNames;
+
+    if (results.size() > 1) {
+        json related = json::array();
+        for (size_t i = 1; i < results.size(); ++i)
+            related.push_back(results[i].title);
+        result["related"] = related;
     }
 
     return result.dump();

@@ -1,4 +1,5 @@
 #include "GW2Client.h"
+#include "WikiText.h"
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -425,6 +426,62 @@ WikiPage GW2Client::WikiGetPageHtml(const std::string& title) {
         page.title = j["parse"].value("title", title);
         if (j["parse"].contains("text") && j["parse"]["text"].contains("*"))
             page.html = j["parse"]["text"]["*"].get<std::string>();
+        return page;
+    } catch (...) {}
+    return {};
+}
+
+std::vector<GuideSearchResult> GW2Client::GuideSearch(const std::string& query, int limit) {
+    std::string path = "/wp-json/wp/v2/search?search=" + UrlEncode(query)
+                     + "&per_page=" + std::to_string(limit);
+    auto resp = Fetch(GUIDE_HOST, path, 25000);
+    if (!resp || resp->statusCode != 200) return {};
+
+    std::vector<GuideSearchResult> results;
+    try {
+        auto arr = json::parse(resp->body);
+        if (!arr.is_array()) return {};
+        for (auto& item : arr) {
+            GuideSearchResult r;
+            r.id = item.value("id", 0);
+            r.title = WikiText::DecodeEntities(item.value("title", ""));
+            if (item.contains("_links") && item["_links"].contains("self")
+                && item["_links"]["self"].is_array() && !item["_links"]["self"].empty()) {
+                r.selfHref = item["_links"]["self"][0].value("href", "");
+            }
+            if (r.id > 0 && !r.title.empty())
+                results.push_back(std::move(r));
+        }
+    } catch (...) {}
+    return results;
+}
+
+GuidePage GW2Client::GuideGetContent(const std::string& selfHref) {
+    if (selfHref.empty()) return {};
+    auto schemeEnd = selfHref.find("://");
+    if (schemeEnd == std::string::npos) return {};
+    auto hostStart = schemeEnd + 3;
+    auto pathStart = selfHref.find('/', hostStart);
+    if (pathStart == std::string::npos) return {};
+    std::string host = selfHref.substr(hostStart, pathStart - hostStart);
+    if (host != GUIDE_HOST) return {};
+    std::string path = selfHref.substr(pathStart) + "?_fields=title,link,modified,content";
+
+    auto resp = Fetch(host.c_str(), path, 25000);
+    if (!resp || resp->statusCode != 200) return {};
+
+    try {
+        auto j = json::parse(resp->body);
+        GuidePage page;
+        page.found = true;
+        if (j.contains("title") && j["title"].is_object())
+            page.title = WikiText::DecodeEntities(j["title"].value("rendered", ""));
+        else
+            page.title = WikiText::DecodeEntities(j.value("title", ""));
+        page.url = j.value("link", "");
+        page.modified = j.value("modified", "");
+        if (j.contains("content") && j["content"].is_object())
+            page.html = j["content"].value("rendered", "");
         return page;
     } catch (...) {}
     return {};

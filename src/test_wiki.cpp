@@ -304,6 +304,60 @@ int main() {
         Check(ok.has_value() && ok->statusCode == 200, "GW2 API still answers with the new timeouts");
     }
 
+    printf("\n=== K: gw2_guide — guildjen community guide (zero Gemini) ===\n");
+    {
+        GW2Client gw2k;
+        ItemIndex idxk;
+        FunctionHandler fh(&gw2k, &idxk);
+        FunctionCall call;
+        auto noCancel = [](){ return false; };
+
+        call.id = "k1"; call.name = "gw2_guide";
+        call.arguments = {{"query", "wvw beginner"}};
+        auto r = fh.Handle(call, noCancel);
+        auto j = json::parse(r.resultText, nullptr, false);
+        printf("size=%zu\n", r.resultText.size());
+        Check(!j.is_discarded() && !j.contains("error"), "gw2_guide returns valid JSON, no error");
+        std::string title = j.value("title", "");
+        printf("title: %s\n", title.c_str());
+        Check(!title.empty(), "title is non-empty");
+        Check(title.find("&#") == std::string::npos, "title has no raw HTML entities");
+        Check(j.value("source", "") == "guildjen", "source is guildjen");
+        Check(!j.value("modified", "").empty(), "modified date present");
+
+        json secs = j.value("sections", json::array());
+        printf("sections: %zu\n", secs.size());
+        Check(secs.size() >= 2, "at least 2 sections");
+        for (size_t i = 0; i < secs.size() && i < 8; ++i)
+            printf("  ## %s\n", secs[i].get<std::string>().c_str());
+
+        std::string content = j.value("content", "");
+        printf("content_size=%zu\n", content.size());
+        Check(content.size() > 100 && content.size() < 14 * 1024, "content between 100 and 14KB");
+        Check(content.find("wp-block") == std::string::npos, "no wp-block leak");
+        Check(content.find("srcset") == std::string::npos, "no srcset leak");
+        Check(content.find("tiled-gallery") == std::string::npos, "no gallery leak");
+        Check(content.find("function(") == std::string::npos, "no JS leak");
+
+        if (secs.size() >= 1) {
+            std::string secName = secs[0].get<std::string>();
+            printf("section= fetch: %s\n", secName.c_str());
+            call.id = "k2"; call.name = "gw2_guide";
+            call.arguments = {{"query", "wvw beginner"}, {"section", secName}};
+            auto r2 = fh.Handle(call, noCancel);
+            auto j2 = json::parse(r2.resultText, nullptr, false);
+            Check(!j2.is_discarded() && !j2.contains("error"), "section= returns valid JSON");
+            std::string sc = j2.value("content", "");
+            Check(sc.find(secName) != std::string::npos, "section content contains the section title");
+        }
+
+        auto cancelled = [](){ return true; };
+        call.id = "k3"; call.name = "gw2_guide";
+        call.arguments = {{"query", "fishing guide"}};
+        auto rc = fh.Handle(call, cancelled);
+        Check(rc.resultText.find("cancelled") != std::string::npos, "cancel is honored");
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }
