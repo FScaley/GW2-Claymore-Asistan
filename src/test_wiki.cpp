@@ -358,6 +358,45 @@ int main() {
         Check(rc.resultText.find("cancelled") != std::string::npos, "cancel is honored");
     }
 
+    printf("\n=== L: Locations section -> locations[] enrichment (Gharr Leadclaw) ===\n");
+    {
+        GW2Client gw2l;
+        ItemIndex idxl;
+        FunctionHandler fhl(&gw2l, &idxl);
+        FunctionCall call;
+        call.id = "l1"; call.name = "gw2_wiki";
+        call.arguments = {{"query", "Gharr Leadclaw"}};
+        auto r = fhl.Handle(call, [](){ return false; });
+        auto j = json::parse(r.resultText, nullptr, false);
+        Check(!j.is_discarded() && !j.contains("error"), "Gharr Leadclaw returns valid JSON");
+
+        size_t locCount = 0;
+        bool hasDragonsStand = false;
+        bool dsPactBase = false;
+        if (j.contains("locations") && j["locations"].is_array()) {
+            locCount = j["locations"].size();
+            printf("locations (%zu):\n", locCount);
+            for (auto& loc : j["locations"]) {
+                std::string mn = loc.value("map_name", "?");
+                size_t wc = loc.contains("waypoints") ? loc["waypoints"].size() : 0;
+                printf("  %s: %zu waypoints", mn.c_str(), wc);
+                if (loc.value("npc_here", false)) printf(" [npc_here]");
+                printf("\n");
+                if (mn == "Dragon's Stand") {
+                    hasDragonsStand = true;
+                    for (auto& wp : loc["waypoints"])
+                        if (wp.value("name", "").find("Pact Base Camp") != std::string::npos)
+                            dsPactBase = true;
+                }
+            }
+        } else {
+            printf("locations: NONE\n");
+        }
+        Check(locCount >= 5, "at least 5 locations (infobox + section)");
+        Check(hasDragonsStand, "Dragon's Stand is in locations (from section text)");
+        Check(dsPactBase, "Dragon's Stand has Pact Base Camp waypoint");
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }

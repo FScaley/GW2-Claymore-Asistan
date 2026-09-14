@@ -141,6 +141,7 @@ void Worker::ClearHistory() {
         m_snapshot.error.clear();
         m_snapshot.fallbackUsed = false;
         m_snapshot.toolStatus.clear();
+        m_verifiedLinks.clear();
     }
     m_interactionId.clear();
     m_interactionModel.clear();
@@ -195,7 +196,6 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
     }
 
     auto tools = FunctionHandler::GetToolDefinitions();
-    std::set<std::string> verifiedLinks;
 
     GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
                                         m_interactionId, m_interactionModel,
@@ -238,7 +238,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
             }
 
             auto links = ExtractChatLinks(result.resultText);
-            verifiedLinks.insert(links.begin(), links.end());
+            { std::lock_guard<std::mutex> lk(m_snapshotMutex); m_verifiedLinks.insert(links.begin(), links.end()); }
 
             results.push_back({result.callId, {result.name, result.resultText}});
         }
@@ -276,7 +276,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     if (resp.ok) {
         auto logger = m_gemini.GetLogger();
-        std::string safeText = StripUnverifiedChatLinks(resp.text, verifiedLinks, logger);
+        std::string safeText = StripUnverifiedChatLinks(resp.text, m_verifiedLinks, logger);
 
         m_snapshot.messages.push_back({ChatMessage::Assistant, safeText});
         m_snapshot.activeModel = resp.activeModel;

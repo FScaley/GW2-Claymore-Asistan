@@ -530,11 +530,16 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
     std::string content;
     json sectionNames = json::array();
 
+    std::string locationsSectionBody;
+
     if (htmlPage.found && !htmlPage.html.empty()) {
         std::string text = WikiText::HtmlToText(htmlPage.html);
         std::vector<WikiSection> sections;
         std::string lead = WikiText::SplitLead(text, sections);
-        for (auto& s : sections) sectionNames.push_back(s.title);
+        for (auto& s : sections) {
+            sectionNames.push_back(s.title);
+            if (LowerStr(s.title) == "locations") locationsSectionBody = s.body;
+        }
 
         if (!sectionWanted.empty()) {
             std::string want = LowerStr(sectionWanted);
@@ -644,7 +649,7 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             for (auto& e : entries)
                 if (e.mapId == mapId) { e.areas.push_back(area); merged = true; break; }
             if (merged) continue;
-            if (entries.size() >= 3) { otherAreas.push_back(area); continue; }
+            if (entries.size() >= LOCATION_MAP_CAP) { otherAreas.push_back(area); continue; }
 
             auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
             if (!mapInfo.found || mapInfo.waypoints.empty()) continue;
@@ -656,6 +661,51 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
             e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
             entries.push_back(std::move(e));
+        }
+
+        // Supplement from the Locations section text: maps listed there but missing from
+        // the infobox get real waypoints.  The section lists regions then "- Map" / "- Area".
+        if (!locationsSectionBody.empty()) {
+            std::string curMap;
+            size_t lpos = 0;
+            while (lpos <= locationsSectionBody.size() && entries.size() < LOCATION_MAP_CAP) {
+                if (Cancelled(cancel)) return CANCELLED_JSON;
+                auto lnl = locationsSectionBody.find('\n', lpos);
+                std::string ln = locationsSectionBody.substr(lpos,
+                    lnl == std::string::npos ? std::string::npos : lnl - lpos);
+                lpos = (lnl == std::string::npos) ? locationsSectionBody.size() + 1 : lnl + 1;
+                ln = TrimStr(ln);
+                if (ln.empty()) { curMap.clear(); continue; }
+                if (ln.size() > 2 && ln.compare(0, 2, "- ") == 0) {
+                    std::string name = TrimStr(ln.substr(2));
+                    auto dash = name.find(" \xe2\x80\x94 ");
+                    if (dash == std::string::npos) dash = name.find(" -- ");
+                    if (dash != std::string::npos) name = TrimStr(name.substr(0, dash));
+                    if (curMap.empty()) {
+                        curMap = name;
+                        bool already = false;
+                        for (auto& e : entries)
+                            if (LowerStr(e.mapName) == LowerStr(curMap)) { already = true; break; }
+                        if (already) continue;
+                        int mapId = ResolveMapId(curMap);
+                        if (mapId <= 0) continue;
+                        bool dup = false;
+                        for (auto& e : entries) if (e.mapId == mapId) { dup = true; break; }
+                        if (dup) continue;
+                        auto mapInfo = m_gw2->GetMapWithWaypoints(mapId);
+                        if (!mapInfo.found || mapInfo.waypoints.empty()) continue;
+                        LocEntry e;
+                        e.mapId = mapId;
+                        e.mapName = mapInfo.name;
+                        e.areas.push_back(curMap);
+                        e.npcHere = hasNpcCoord && InContinentRect(mapInfo, npcX, npcY);
+                        e.waypoints = BuildWaypointList(mapInfo.waypoints, e.npcHere, npcX, npcY);
+                        entries.push_back(std::move(e));
+                    }
+                } else {
+                    curMap.clear();
+                }
+            }
         }
 
         std::stable_sort(entries.begin(), entries.end(),
@@ -694,26 +744,42 @@ std::string FunctionHandler::HandleGuide(const json& args, const CancelCheck& ca
     if (Cancelled(cancel)) return CANCELLED_JSON;
 
     auto& top = results[0];
-    auto page = m_gw2->GuideGetContent(top.selfHref);
-    if (!page.found)
-        return "{\"error\": \"Guide content not available: " + top.title + "\"}";
-    if (Cancelled(cancel)) return CANCELLED_JSON;
+    auto cacheIt = m_guideCache.find(top.id);
+    std::string text;
+    std::string pageTitle, pageUrl, pageModified;
 
-    std::string text = WikiText::HtmlToText(page.html);
+    if (cacheIt != m_guideCache.end()) {
+        text = cacheIt->second.text;
+        pageTitle = cacheIt->second.title;
+        pageUrl = cacheIt->second.url;
+        pageModified = cacheIt->second.modified;
+    } else {
+        auto page = m_gw2->GuideGetContent(top.selfHref);
+        if (!page.found)
+            return "{\"error\": \"Guide content not available: " + top.title + "\"}";
+        if (Cancelled(cancel)) return CANCELLED_JSON;
 
-    // WordPress uses <h1> for top-level sections; normalize to ## so SplitLead finds them.
-    std::string normalized;
-    size_t pos = 0;
-    while (pos <= text.size()) {
-        auto nl = text.find('\n', pos);
-        std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-        pos = (nl == std::string::npos) ? text.size() + 1 : nl + 1;
-        if (line.size() > 2 && line.compare(0, 2, "# ") == 0 && (line.size() < 3 || line[2] != '#'))
-            normalized += "## " + line.substr(2) + "\n";
-        else
-            normalized += line + "\n";
+        text = WikiText::HtmlToText(page.html);
+
+        // WordPress uses <h1> for top-level sections; normalize to ## so SplitLead finds them.
+        std::string normalized;
+        size_t pos = 0;
+        while (pos <= text.size()) {
+            auto nl = text.find('\n', pos);
+            std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+            pos = (nl == std::string::npos) ? text.size() + 1 : nl + 1;
+            if (line.size() > 2 && line.compare(0, 2, "# ") == 0 && (line.size() < 3 || line[2] != '#'))
+                normalized += "## " + line.substr(2) + "\n";
+            else
+                normalized += line + "\n";
+        }
+        text = normalized;
+        pageTitle = page.title;
+        pageUrl = page.url;
+        pageModified = page.modified;
+
+        m_guideCache[top.id] = {pageTitle, pageUrl, pageModified, text};
     }
-    text = normalized;
 
     std::vector<WikiSection> sections;
     std::string lead = WikiText::SplitLead(text, sections);
@@ -752,10 +818,10 @@ std::string FunctionHandler::HandleGuide(const json& args, const CancelCheck& ca
 
     json result;
     result["source"] = "guildjen";
-    result["title"] = page.title;
-    result["url"] = page.url;
-    if (!page.modified.empty())
-        result["modified"] = page.modified.substr(0, 10);
+    result["title"] = pageTitle;
+    result["url"] = pageUrl;
+    if (!pageModified.empty())
+        result["modified"] = pageModified.substr(0, 10);
     result["content"] = content;
     if (!sectionNames.empty()) result["sections"] = sectionNames;
 

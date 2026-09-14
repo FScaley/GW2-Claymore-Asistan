@@ -3,6 +3,7 @@
 #include "ItemIndex.h"
 #include <string>
 #include <functional>
+#include <unordered_map>
 #include <json.hpp>
 
 struct FunctionCall {
@@ -30,6 +31,7 @@ public:
     static constexpr size_t WIKI_TEXT_BUDGET = 12 * 1024;
     static constexpr size_t WIKI_SUBPAGE_CAP = 5;
     static constexpr size_t GUIDE_TEXT_BUDGET = 12 * 1024;
+    static constexpr size_t LOCATION_MAP_CAP = 6;
 
 private:
     std::string HandleItemInfo(const nlohmann::json& args, const CancelCheck& cancel);
@@ -44,6 +46,14 @@ private:
 
     static bool Cancelled(const CancelCheck& c) { return c && c(); }
 
+    struct GuideCache {
+        std::string title;
+        std::string url;
+        std::string modified;
+        std::string text;   // HtmlToText + h1→h2 normalized
+    };
+
     GW2Client* m_gw2;
     ItemIndex* m_index;
+    std::unordered_map<int, GuideCache> m_guideCache;
 };

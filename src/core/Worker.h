@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <set>
 
 struct ChatMessage {
     enum Role { User, Assistant, System };
@@ -64,7 +65,8 @@ private:
 
     std::string m_interactionId;
     std::string m_interactionModel;
-    std::string m_keyProblem;      // why the key cannot be sent ("" = fine); set in Start, read by the worker thread
+    std::string m_keyProblem;
+    std::set<std::string> m_verifiedLinks;      // why the key cannot be sent ("" = fine); set in Start, read by the worker thread
 
     static const std::string SYSTEM_PROMPT;
     static constexpr int MAX_FC_ROUNDS = 6;
