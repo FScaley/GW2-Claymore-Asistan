@@ -70,7 +70,7 @@ Detaylar: `faz0-rapor.md`
 - ClearHistory() cagirici yok (Temizle butonu Faz 2'de)
 - model_tier config okunur ama kullanilmaz (Faz 2: paid → Pro + grounding)
 
-### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.14 bugfix/prompt)
+### Faz 2: Akilli Veri Entegrasyonu — TAMAMLANDI (13 Eylul 2026, v0.3.8; v0.3.9–v0.3.15 bugfix/prompt/kaynak)
 
 **v0.3.0 (13 Eylul 2026):**
 - GW2Client — /v2/items, /v2/commerce/prices, /v2/recipes, /v2/recipes/search, Wiki opensearch + parse
@@ -188,11 +188,23 @@ Detaylar: `faz0-rapor.md`
 - Testler: TEST 10 (Gharr 2-turn Lite, checks: turn1 locations=6 wayfinder=1 dragons_stand=1; turn2 fc_wiki pact_base halluc=0); TEST 11 (Auric Dust 1-turn Lite, checks: sources=4 vendor chest story gather). A–J + -1/-1b/0–11 yesil. Durustluk: turn 2 sablonu 4 kosunun 2'sinde takip edildi, Lite %100 guvenilir degil; fc_wiki_main tum kosuslarda 0 (model ana sayfayi tekrar cagirmiyor, turn 1 baglamini kullaniyor)
 - Bilinen: (1) COMPLETENESS vs COLLECTION catismasi — Lite collection itemlerine hafizadan detay ekliyor (Milin, 50 Inscribed Shard; hint yalnizca "heket" diyor); v0.3.14 oncesi de vardi. (2) verifiedLinks DoChat basina sifirlanir — turn 2 turn 1'in gecerli kodlarini soyar ([&BC4EAAA=] → [kod dogrulanamadi]); onceden var, UX hatasi
 
+**v0.3.15 (14 Eylul 2026) — Yeni kaynak: guildjen.com topluluk rehberleri:**
+- Yeni tool `gw2_guide(query, section?)` — guildjen.com'dan WordPress REST API ile topluluk rehberleri ceker. How-to, farming, leveling, gearing, mode introduction sorulari icin. Koleksiyon/achievement item listesi DEGIL (gw2_wiki'nin isi — tool description siniri koyar)
+- Kesfedilme: `/wp-json/wp/v2/search` (hem post hem page kapasar). Icerik: `/wp-json/wp/v2/posts|pages/{id}?_fields=title,link,modified,content` → `content.rendered` (yalnizca makale HTML'i). HtmlToText ile cevrilir; h1→h2 normalize (WordPress h1 kullanir, SplitLead h2 arar). 12KB metin butcesi, gw2_wiki ile ayni desen. Entity-decoded basliklar (&#8217; → ')
+- Host guard: GuideGetContent yalnizca GUIDE_HOST'a baglanir — WordPress JSON'daki `_links.self` rasgele host'a yonlendirmez
+- System prompt: WHEN TO USE TOOLS'a `gw2_guide` eklendi; "General advice WITHOUT tools" → yalnizca opinion/comparison. Rehber attributionu: "guildjen rehberine gore (YYYY-MM)". CONTRADICTION RULE wiki facts icin; rehber icin "rehber boyle diyor"
+- Feasibility probe: gw2mists.com DUSTU (pure SPA, API 403); snowcrows.com ve metabattle.com calisiyor (SSR) ama ertelendi (kullanici: "buildler cok onemli degil"). guildjen.com Cloudflare (AAAA kaydi var — IPv6 sinifi)
+- Testler: test_wiki K (zero Gemini: 8 section, 12KB, sifir sizinti, entity decode, section=, cancel); test_gemini TEST 12 (Lite: balik tutma → fc_guide=1, source_named=1; TEST 6 gw2_guide'a donmedi — sinir tuttu)
+- Bilinen: (1) guide chat kodlari verifiedLinks'e girer — guildjen icin guvenilir ama yeni guven yuzeyi. (2) Per-session cache yok (section= iki HTTP cagrisi tekrarlar). (3) Top-hit only, relevance guard yok
+
 **Faz 2 kalan (ertelenmis / kosullu):**
 - Locations section → locations[] parse: infobox | location yalnizca bir alt kume; wiki Locations bolumunu (region→harita→bolge + kosul + waypoint adi) yapisal locations[]'a cevir — v0.3.14 text-based workaround'dan daha saglam
 - verifiedLinks multi-turn fix: DoChat basina sifirlanir, turn 2 turn 1'in gecerli kodlarini soyar — cozum: instance seviyesinde (veya en azindan oturum basina) link seti
 - COLLECTION vs COMPLETENESS catismasi: Lite hint disinda hafizadan detay ekliyor (Milin, 50 Inscribed Shard); COLLECTION RULE'u sertlestir veya hint metnine model adini/miktarini wiki'den ekle
-- Yeni veri kaynaklari (kullanici 13 Eylul acti, henuz feasibility probe yapilmadi): snowcrows.com (PvE build), gw2mists.com (PvP/WvW build), metabattle.com (genel), guildjen.com (rehber). Oncelik: curl ile sayfa cek → HTML'de mi JS-render mi, robots.txt, arama endpoint'i. Feasibility sonuclarina gore tool tasarimi
+- Guide per-session cache: post id bazli cache, section= tekrar fetch yapmasin
+- snowcrows.com (PvE raid build) ve metabattle.com (genel build, MediaWiki) entegrasyonu — feasibility dogrulandi (SSR, robots.txt acik), kullanici onceligi dusuk ("buildler cok onemli degil"); gw2mists.com dustu (SPA, API 403)
+- verifiedLinks guide trust surface: guildjen kodlari otomatik verified — guvenilir ama prensipte riskli; source bazli ayirma dusunulebilir
+- Guide relevance guard: top-hit her zaman isabetli olmayabilir; skor/keyword eslesmesi kontrolu
 - Faturalandirma acilirsa: zincir aynen kalir; Pro opsiyonel (yavas/pahali). Acilmazsa: 3.8-flash'i birincil olarak olc (429 govdesi + TEST 5–8), Lite'i fiili birincil kabul edip sertlestirmeye devam
 - "Neden turuncu" tooltip'i (kota mi, anlik 429 mu) — kucuk UI isi
 - Kullanici/sistem proxy destegi (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` veya `WinHttpGetIEProxyConfigForCurrentUser` ile istek basina proxy) — KOSULLU: yalnizca bir `[HTTP]` logu 12029/12002 + `kullanici proxy: proxy=<host>` gosterirse (v0.3.12 notu)
