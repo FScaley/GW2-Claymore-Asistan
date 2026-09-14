@@ -52,7 +52,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Name = "Claymore Asistan";
     AddonDef.Version.Major = 0;
     AddonDef.Version.Minor = 3;
-    AddonDef.Version.Build = 17;
+    AddonDef.Version.Build = 18;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -120,7 +120,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.3.17 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.3.18 loaded.");
 
     // Field diagnostics for "works for everyone but me": Windows version, whether a proxy exists
     // that WinHTTP (DEFAULT_PROXY) would ignore, and the key's shape - never the key.
@@ -175,7 +175,7 @@ void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v0.3.17");
+    ImGui::Text("Claymore Asistan v0.3.18");
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 
@@ -212,13 +212,65 @@ void AddonOptions() {
     }
 
     ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("Model Zinciri:");
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Birincil modelde kota asiminda sirasiyla sonrakiler denenir.");
+
+    static const char* KNOWN_MODELS[] = {
+        "gemini-3.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash"
+    };
+    static const int MODEL_COUNT = 3;
+
     auto& chain = g_config->GetModelChain();
-    std::string chainStr;
-    for (size_t i = 0; i < chain.size(); ++i) {
-        if (i > 0) chainStr += " > ";
-        chainStr += chain[i];
+    auto& defaults = ConfigManager::DEFAULT_MODEL_CHAIN;
+    auto& active = chain.empty() ? defaults : chain;
+
+    for (size_t i = 0; i < active.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::Text("%zu.", i + 1);
+        ImGui::SameLine();
+
+        int sel = -1;
+        for (int k = 0; k < MODEL_COUNT; ++k)
+            if (active[i] == KNOWN_MODELS[k]) { sel = k; break; }
+
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::Combo("##model", &sel, KNOWN_MODELS, MODEL_COUNT) && sel >= 0) {
+            auto copy = active;
+            copy[i] = KNOWN_MODELS[sel];
+            g_config->SetModelChain(copy);
+            g_config->Save(g_configPath);
+            if (g_worker) {
+                g_worker->Stop();
+                auto* api2 = APIDefs;
+                g_worker->Start(g_config, g_funcHandler, [api2](const std::string& msg) {
+                    api2->Log(LOGL_WARNING, "Claymore", msg.c_str());
+                });
+            }
+        }
+
+        if (i > 0) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("\xe2\x96\xb2")) {
+                auto copy = active;
+                std::swap(copy[i], copy[i - 1]);
+                g_config->SetModelChain(copy);
+                g_config->Save(g_configPath);
+            }
+        }
+        if (i + 1 < active.size()) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("\xe2\x96\xbc")) {
+                auto copy = active;
+                std::swap(copy[i], copy[i + 1]);
+                g_config->SetModelChain(copy);
+                g_config->Save(g_configPath);
+            }
+        }
+        ImGui::PopID();
     }
-    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Model zinciri: %s", chainStr.c_str());
 
     if (g_itemIndex) {
         size_t count = g_itemIndex->Size();

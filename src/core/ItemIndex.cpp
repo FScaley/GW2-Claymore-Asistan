@@ -57,9 +57,15 @@ int ItemIndex::Find(const std::string& name) const {
 
 void ItemIndex::Add(const std::string& name, int id) {
     if (name.empty() || id <= 0) return;
-    std::lock_guard<std::mutex> lk(m_mutex);
-    m_nameToId[ToLower(name)] = id;
-    m_dirty = true;
+    bool shouldSave = false;
+    {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        m_nameToId[ToLower(name)] = id;
+        m_dirty = true;
+        ++m_dirtyCount;
+        if (m_dirtyCount >= 20) { shouldSave = true; m_dirtyCount = 0; }
+    }
+    if (shouldSave && !m_path.empty()) Save("");
 }
 
 void ItemIndex::AddBatch(const std::vector<std::pair<std::string, int>>& items) {

@@ -20,4 +20,5 @@ private:
     std::unordered_map<std::string, int> m_nameToId;
     std::string m_path;
     bool m_dirty = false;
+    int m_dirtyCount = 0;
 };

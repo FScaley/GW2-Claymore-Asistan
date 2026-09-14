@@ -30,9 +30,15 @@ std::string ProxyField(LPWSTR s) {
 HttpClient::HttpClient()
 {
     m_hSession = WinHttpOpen(L"GW2-Claymore-Asistan/1.0",
-                             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                             WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                              WINHTTP_NO_PROXY_NAME,
                              WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!m_hSession) {
+        m_hSession = WinHttpOpen(L"GW2-Claymore-Asistan/1.0",
+                                 WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                 WINHTTP_NO_PROXY_NAME,
+                                 WINHTTP_NO_PROXY_BYPASS, 0);
+    }
     if (!m_hSession) {
         Fail("WinHttpOpen", GetLastError(), 0);
         return;
