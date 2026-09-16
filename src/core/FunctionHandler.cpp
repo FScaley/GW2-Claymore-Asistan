@@ -1123,7 +1123,93 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
         if (!otherAreas.empty()) result["other_locations"] = otherAreas;
     }
 
-    // Collection pages: no | location areas but may have {{interactive map}} with all markers
+    // Achievement page hop: if no entity coords yet, look for achievement/collection links
+    // and check those pages for {{interactive map}}
+    if (m_entityCoords.empty() && imapData.markers.empty() && !Cancelled(cancel)) {
+        // Find achievement links: {{achievement icon|Name}}, {{achievement|Name}}, [[Name]] in achievment context
+        std::vector<std::string> achieveLinks;
+        size_t apos = 0;
+        while (apos < wikiPage.wikitext.size()) {
+            // Match {{achievement icon|X}} and {{achievement|X}}
+            for (const char* pat : {"{{achievement icon|", "{{achievement|", "{{Achievement icon|", "{{Achievement|"}) {
+                auto found = wikiPage.wikitext.find(pat, apos);
+                if (found != std::string::npos && (apos == 0 || found == apos)) {
+                    apos = found;
+                    size_t nameStart = found + std::strlen(pat);
+                    auto rb = wikiPage.wikitext.find("}}", nameStart);
+                    if (rb != std::string::npos) {
+                        std::string name = wikiPage.wikitext.substr(nameStart, rb - nameStart);
+                        auto pipe = name.find('|');
+                        if (pipe != std::string::npos) name = name.substr(0, pipe);
+                        auto hash = name.find('#');
+                        if (hash != std::string::npos) name = name.substr(0, hash);
+                        name = TrimStr(name);
+                        if (!name.empty() && name.size() > 3) {
+                            bool dup = false;
+                            for (auto& l : achieveLinks) if (l == name) { dup = true; break; }
+                            if (!dup) achieveLinks.push_back(name);
+                        }
+                        apos = rb + 2;
+                    } else { ++apos; }
+                    goto nextAchieve;
+                }
+            }
+            ++apos;
+            nextAchieve:;
+        }
+
+        for (auto& achieveTitle : achieveLinks) {
+            if (Cancelled(cancel)) break;
+            if (achieveLinks.size() > 5) break;
+            auto achievePage = m_gw2->WikiGetPage(achieveTitle);
+            if (!achievePage.found) continue;
+            auto achieveImap = ParseInteractiveMapData(achievePage.wikitext);
+            if (!achieveImap.markers.empty()) {
+                imapData = std::move(achieveImap);
+                break;
+            }
+        }
+    }
+
+    // Coordinate search fallback: if no entity coords yet and no interactive map on this page,
+    // search for a related page that HAS {{interactive map}} (insource: CirrusSearch).
+    // Only use results whose title shares significant word overlap with the original query
+    // to avoid showing markers from the wrong page.
+    if (m_entityCoords.empty() && imapData.markers.empty() && !Cancelled(cancel)) {
+        auto queryWords = std::vector<std::string>();
+        {
+            std::string lower = LowerStr(title);
+            std::string word;
+            for (char c : lower) {
+                if (std::isalnum((unsigned char)c)) word += c;
+                else { if (word.size() >= 3) queryWords.push_back(word); word.clear(); }
+            }
+            if (word.size() >= 3) queryWords.push_back(word);
+        }
+
+        auto imapHits = m_gw2->WikiSearchWithInteractiveMap(title, 3);
+        for (auto& hit : imapHits) {
+            if (Cancelled(cancel)) break;
+            if (hit.title == title) continue;
+
+            // At least one query word must appear in the hit title
+            std::string hitLower = LowerStr(hit.title);
+            bool anyMatch = false;
+            for (auto& qw : queryWords)
+                if (hitLower.find(qw) != std::string::npos) { anyMatch = true; break; }
+            if (!anyMatch && !queryWords.empty()) continue;
+
+            auto imapPage = m_gw2->WikiGetPage(hit.title);
+            if (!imapPage.found) continue;
+            auto hitImap = ParseInteractiveMapData(imapPage.wikitext);
+            if (!hitImap.markers.empty()) {
+                imapData = std::move(hitImap);
+                break;
+            }
+        }
+    }
+
+    // Collection/interactive map pages: produce entity coords from markers
     if (m_entityCoords.empty() && !imapData.markers.empty() && !Cancelled(cancel)) {
         // Bulk-fetch map rects for all referenced maps
         std::vector<int> missingMaps;

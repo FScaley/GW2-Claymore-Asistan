@@ -333,36 +333,43 @@ void MarkerOverlay::RenderHUD(Mumble::Data* mumble, NexusLinkData_t* nexus,
         snprintf(hudText, sizeof(hudText), "%s", target.name.c_str());
     }
 
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
     ImVec2 textSize = ImGui::CalcTextSize(hudText);
-    float hudW = textSize.x + 50.0f;
+    float hudW = textSize.x + 60.0f;
     float hudH = textSize.y + 14.0f;
     float hudX = (screenW - hudW) * 0.5f;
     float hudY = 18.0f;
 
-    dl->AddRectFilled(ImVec2(hudX, hudY), ImVec2(hudX + hudW, hudY + hudH), U32_HUD_BG, 3.0f);
-    dl->AddRect(ImVec2(hudX, hudY), ImVec2(hudX + hudW, hudY + hudH), U32_HUD_BORDER, 3.0f);
+    ImGui::SetNextWindowPos(ImVec2(hudX, hudY));
+    ImGui::SetNextWindowSize(ImVec2(hudW, hudH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.035f, 0.03f, 0.82f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.93f, 0.91f, 0.67f, 0.25f));
 
-    // Gold dot
+    ImGui::Begin("##claymore_marker_hud", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_AlwaysAutoResize);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddCircleFilled(ImVec2(hudX + 14, hudY + hudH * 0.5f), 5.0f, U32_GOLD, 12);
-
-    // Text
     dl->AddText(ImVec2(hudX + 26, hudY + 7), IM_COL32(255, 255, 255, 255), hudText);
 
-    // Dismiss button "X" — manual hit-test (no ImGui window context in overlay callback)
-    float bx = hudX + hudW - 22.0f;
-    float by = hudY + 4.0f;
-    float bs = hudH - 8.0f;
+    // Dismiss button
+    float btnSize = hudH - 4.0f;
+    ImGui::SetCursorScreenPos(ImVec2(hudX + hudW - btnSize - 4.0f, hudY + 2.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.2f, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.3f, 0.2f, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.6f));
+    if (ImGui::Button("X", ImVec2(btnSize, btnSize)))
+        ClearTarget();
+    ImGui::PopStyleColor(4);
 
-    ImVec2 mousePos = ImGui::GetIO().MousePos;
-    bool hovered = mousePos.x >= bx && mousePos.x <= bx + bs &&
-                   mousePos.y >= by && mousePos.y <= by + bs;
-    if (hovered) {
-        dl->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bs, by + bs),
-                          IM_COL32(255, 80, 60, 40), 2.0f);
-        if (ImGui::GetIO().MouseClicked[0]) ClearTarget();
-    }
-    dl->AddText(ImVec2(bx + 2, by), IM_COL32(255, 255, 255, 90), "\xc3\x97");
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
 }
 
 void MarkerOverlay::RenderEdgeArrow(float screenW, float screenH,

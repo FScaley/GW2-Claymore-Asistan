@@ -420,6 +420,47 @@ std::vector<WikiSearchResult> GW2Client::WikiSearch(const std::string& query, in
     return result;
 }
 
+std::vector<WikiSearchResult> GW2Client::WikiSearchWithInteractiveMap(const std::string& query, int limit) {
+    std::vector<WikiSearchResult> result;
+    auto queryWords = SearchWords(query);
+    if (queryWords.empty()) return result;
+
+    std::string searchTerms = "insource:\"interactive map\"";
+    for (auto& w : queryWords) searchTerms += " " + w;
+    std::string path = "/api.php?action=query&list=search&srsearch=" + UrlEncode(searchTerms)
+                     + "&srlimit=5&srnamespace=0&format=json";
+    auto resp = Fetch(WIKI_HOST, path);
+    if (!resp || resp->statusCode != 200) return result;
+
+    struct Scored { WikiSearchResult r; double score; };
+    std::vector<Scored> scored;
+    try {
+        auto j = json::parse(resp->body);
+        if (!j.contains("query") || !j["query"].contains("search")) return result;
+        for (auto& hit : j["query"]["search"]) {
+            std::string title = hit.value("title", "");
+            if (title.empty()) continue;
+            double score = TitleScore(queryWords, title);
+            WikiSearchResult r;
+            r.title = title;
+            std::string slug = title;
+            std::replace(slug.begin(), slug.end(), ' ', '_');
+            r.url = "https://wiki.guildwars2.com/wiki/" + UrlEncode(slug);
+            r.fulltext = true;
+            scored.push_back({std::move(r), score});
+        }
+    } catch (...) { return result; }
+
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const Scored& a, const Scored& b) { return a.score > b.score; });
+    int cap = std::min(limit, 3);
+    for (auto& s : scored) {
+        if (static_cast<int>(result.size()) >= cap) break;
+        result.push_back(std::move(s.r));
+    }
+    return result;
+}
+
 std::vector<WikiSearchResult> GW2Client::WikiFullTextSearch(const std::string& query, int limit) {
     std::vector<WikiSearchResult> result;
     auto queryWords = SearchWords(query);

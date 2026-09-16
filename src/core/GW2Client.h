@@ -130,6 +130,7 @@ public:
     GW2MapInfo GetMapWithWaypoints(int mapId);
 
     std::vector<WikiSearchResult> WikiSearch(const std::string& query, int limit = 5);
+    std::vector<WikiSearchResult> WikiSearchWithInteractiveMap(const std::string& query, int limit = 5);
     WikiPage WikiGetPage(const std::string& title);
     WikiPage WikiGetPageHtml(const std::string& title);
 
