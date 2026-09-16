@@ -173,6 +173,12 @@ public:
     AchievementInfo GetAchievement(int id);
     AccountAchievement GetAccountAchievement(int id, const std::string& apiKey);
     TokenInfo GetTokenInfo(const std::string& apiKey);
+    std::string GetAccountWallet(const std::string& apiKey);
+    std::string GetAccountBank(const std::string& apiKey);
+    std::string GetAccountMaterials(const std::string& apiKey);
+    std::string GetAccountCharacters(const std::string& apiKey);
+    std::string GetAccountCharacter(const std::string& name, const std::string& apiKey);
+    std::string GetAccountUnlocks(const std::string& type, const std::string& apiKey);
 
     static std::string FormatPrice(int copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);

@@ -690,6 +690,31 @@ GuidePage GW2Client::GuideGetContent(const std::string& selfHref) {
     return {};
 }
 
+std::string GW2Client::GetAccountWallet(const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/account/wallet?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+std::string GW2Client::GetAccountBank(const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/account/bank?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+std::string GW2Client::GetAccountMaterials(const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/account/materials?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+std::string GW2Client::GetAccountCharacters(const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/characters?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+std::string GW2Client::GetAccountCharacter(const std::string& name, const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/characters/" + UrlEncode(name) + "?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+std::string GW2Client::GetAccountUnlocks(const std::string& type, const std::string& apiKey) {
+    auto resp = Fetch(API_HOST, "/v2/account/" + type + "?access_token=" + UrlEncode(apiKey));
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+
 AchievementInfo GW2Client::GetAchievement(int id) {
     std::string path = "/v2/achievements/" + std::to_string(id);
     auto resp = Fetch(API_HOST, path);

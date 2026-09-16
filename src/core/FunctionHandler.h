@@ -65,6 +65,11 @@ private:
     std::string HandleWiki(const nlohmann::json& args, const CancelCheck& cancel);
     std::string HandleGuide(const nlohmann::json& args, const CancelCheck& cancel);
     std::string HandleBuild(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleAccountAchievement(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleAccountWallet(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleAccountInventory(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleAccountCharacters(const nlohmann::json& args, const CancelCheck& cancel);
+    std::string HandleAccountUnlocks(const nlohmann::json& args, const CancelCheck& cancel);
 
     int ResolveItemId(const std::string& name);
     int ResolveMapId(const std::string& name, int depth = 0);

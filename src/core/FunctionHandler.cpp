@@ -356,6 +356,16 @@ FunctionResult FunctionHandler::Handle(const FunctionCall& call, CancelCheck sho
         result.resultText = HandleGuide(call.arguments, shouldCancel);
     else if (call.name == "gw2_build")
         result.resultText = HandleBuild(call.arguments, shouldCancel);
+    else if (call.name == "gw2_account_achievement")
+        result.resultText = HandleAccountAchievement(call.arguments, shouldCancel);
+    else if (call.name == "gw2_account_wallet")
+        result.resultText = HandleAccountWallet(call.arguments, shouldCancel);
+    else if (call.name == "gw2_account_inventory")
+        result.resultText = HandleAccountInventory(call.arguments, shouldCancel);
+    else if (call.name == "gw2_account_characters")
+        result.resultText = HandleAccountCharacters(call.arguments, shouldCancel);
+    else if (call.name == "gw2_account_unlocks")
+        result.resultText = HandleAccountUnlocks(call.arguments, shouldCancel);
     else
         result.resultText = "{\"error\": \"Unknown function: " + call.name + "\"}";
 
@@ -474,6 +484,85 @@ json FunctionHandler::GetToolDefinitions() {
                 }}
             }},
             {"required", json::array({"query"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_account_achievement"},
+        {"description", "Check the user's achievement progress. Returns completed/remaining steps. Use for 'which did I do?', 'what is left?'. Works for any achievement or map category."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Achievement or map/category name in English (e.g. 'Saving Skyscales', 'Lowland Shore')"}
+                }}
+            }},
+            {"required", json::array({"name"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_account_wallet"},
+        {"description", "Check the user's wallet (gold, karma, tokens, currencies). Use for 'how much gold/karma do I have?', 'can I afford X?', 'param yeter mi?'. Returns all currencies with amounts."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {}},
+            {"required", json::array()}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_account_inventory"},
+        {"description", "Search the user's bank + material storage for a specific item. Use for 'how many X do I have?', 'bu item var mi?'. Returns the total count across all storage."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"item", {
+                    {"type", "string"},
+                    {"description", "Item name in English (e.g. 'Pile of Auric Dust', 'Mystic Coin')"}
+                }}
+            }},
+            {"required", json::array({"item"})}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_account_characters"},
+        {"description", "List the user's characters or get details of a specific one. Use for 'my characters', 'what level is my X?', 'what class am I?'."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Optional character name. If empty, lists all characters."}
+                }}
+            }},
+            {"required", json::array()}
+        }}
+    });
+
+    tools.push_back({
+        {"type", "function"},
+        {"name", "gw2_account_unlocks"},
+        {"description", "Check if the user has unlocked a specific skin, dye, mini, or recipe. Use for 'do I have this skin?', 'bu boya acik mi?'."},
+        {"parameters", {
+            {"type", "object"},
+            {"properties", {
+                {"type", {
+                    {"type", "string"},
+                    {"description", "Unlock type: 'skins', 'dyes', 'minis', 'recipes', 'titles'"}
+                }},
+                {"name", {
+                    {"type", "string"},
+                    {"description", "Item name to check (e.g. 'Eternity', 'Celestial Dye')"}
+                }}
+            }},
+            {"required", json::array({"type", "name"})}
         }}
     });
 
@@ -1612,6 +1701,264 @@ std::string FunctionHandler::HandleBuild(const json& args, const CancelCheck& ca
         alts.push_back(a);
     }
     if (!alts.empty()) result["alternatives"] = alts;
+
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleAccountWallet(const json& args, const CancelCheck& cancel) {
+    if (m_gw2ApiKey.empty())
+        return "{\"error\": \"GW2 API key not configured. User should enter it in Options > Claymore Asistan.\"}";
+    auto raw = m_gw2->GetAccountWallet(m_gw2ApiKey);
+    if (raw.empty()) return "{\"error\": \"Could not fetch wallet data\"}";
+    // Return raw wallet data — currency id 1 = coin (copper)
+    // AI knows common currency IDs: 1=Coin, 2=Karma, 3=Laurel, 4=Gem,
+    // 15=Badge of Honor, 16=Gold Fractal Relic, 23=Spirit Shard, etc.
+    try {
+        auto walletArr = json::parse(raw);
+        json result;
+        for (auto& w : walletArr) {
+            int id = w.value("id", 0);
+            int val = w.value("value", 0);
+            if (id == 1) {
+                result["coin_copper"] = val;
+                result["gold"] = val / 10000;
+                result["silver"] = (val % 10000) / 100;
+                result["copper"] = val % 100;
+            } else {
+                result["currency_" + std::to_string(id)] = val;
+            }
+        }
+        result["hint"] = "currency_1=Coin, currency_2=Karma, currency_3=Laurel, currency_4=Gem, currency_15=Badge of Honor, currency_23=Spirit Shard, currency_18=Transmutation Charge, currency_45=Mystic Coin (wallet)";
+        return result.dump();
+    } catch (...) {}
+    return "{\"error\": \"Failed to parse wallet\"}";
+}
+
+std::string FunctionHandler::HandleAccountInventory(const json& args, const CancelCheck& cancel) {
+    if (m_gw2ApiKey.empty())
+        return "{\"error\": \"GW2 API key not configured.\"}";
+    std::string itemName = args.value("item", "");
+    if (itemName.empty()) return "{\"error\": \"item parameter required\"}";
+
+    int itemId = ResolveItemId(itemName);
+    if (itemId <= 0) return "{\"error\": \"Item not found: " + itemName + "\"}";
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    int total = 0;
+    json locations = json::array();
+
+    // Material storage
+    auto matRaw = m_gw2->GetAccountMaterials(m_gw2ApiKey);
+    if (!matRaw.empty()) {
+        try {
+            auto arr = json::parse(matRaw);
+            for (auto& m : arr) {
+                if (m.value("id", 0) == itemId && m.value("count", 0) > 0) {
+                    int c = m.value("count", 0);
+                    total += c;
+                    locations.push_back({{"location", "Material Storage"}, {"count", c}});
+                }
+            }
+        } catch (...) {}
+    }
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    // Bank
+    auto bankRaw = m_gw2->GetAccountBank(m_gw2ApiKey);
+    if (!bankRaw.empty()) {
+        try {
+            int bankCount = 0;
+            auto arr = json::parse(bankRaw);
+            for (auto& slot : arr) {
+                if (!slot.is_null() && slot.value("id", 0) == itemId)
+                    bankCount += slot.value("count", 0);
+            }
+            if (bankCount > 0) {
+                total += bankCount;
+                locations.push_back({{"location", "Bank"}, {"count", bankCount}});
+            }
+        } catch (...) {}
+    }
+
+    json result;
+    result["item"] = itemName;
+    result["item_id"] = itemId;
+    result["total_count"] = total;
+    result["locations"] = locations;
+    return result.dump();
+}
+
+std::string FunctionHandler::HandleAccountCharacters(const json& args, const CancelCheck& cancel) {
+    if (m_gw2ApiKey.empty())
+        return "{\"error\": \"GW2 API key not configured.\"}";
+    std::string charName = args.value("name", "");
+
+    if (charName.empty()) {
+        // List all characters
+        auto raw = m_gw2->GetAccountCharacters(m_gw2ApiKey);
+        if (raw.empty()) return "{\"error\": \"Could not fetch characters\"}";
+        try {
+            auto names = json::parse(raw);
+            json result = json::array();
+            for (auto& n : names) {
+                if (!n.is_string()) continue;
+                if (Cancelled(cancel)) return CANCELLED_JSON;
+                auto charRaw = m_gw2->GetAccountCharacter(n.get<std::string>(), m_gw2ApiKey);
+                if (charRaw.empty()) continue;
+                auto c = json::parse(charRaw);
+                json entry;
+                entry["name"] = c.value("name", "");
+                entry["level"] = c.value("level", 0);
+                entry["profession"] = c.value("profession", "");
+                entry["race"] = c.value("race", "");
+                entry["age"] = c.value("age", 0);
+                entry["deaths"] = c.value("deaths", 0);
+                result.push_back(entry);
+            }
+            return result.dump();
+        } catch (...) {}
+        return "{\"error\": \"Failed to parse characters\"}";
+    } else {
+        auto raw = m_gw2->GetAccountCharacter(charName, m_gw2ApiKey);
+        if (raw.empty()) return "{\"error\": \"Character not found: " + charName + "\"}";
+        return raw;
+    }
+}
+
+std::string FunctionHandler::HandleAccountUnlocks(const json& args, const CancelCheck& cancel) {
+    if (m_gw2ApiKey.empty())
+        return "{\"error\": \"GW2 API key not configured.\"}";
+    std::string type = args.value("type", "");
+    std::string name = args.value("name", "");
+    if (type.empty() || name.empty())
+        return "{\"error\": \"type and name parameters required\"}";
+
+    auto raw = m_gw2->GetAccountUnlocks(type, m_gw2ApiKey);
+    if (raw.empty()) return "{\"error\": \"Could not fetch " + type + " data\"}";
+
+    try {
+        auto ids = json::parse(raw);
+        // Resolve item name to ID
+        int targetId = ResolveItemId(name);
+
+        json result;
+        result["type"] = type;
+        result["name"] = name;
+        result["total_unlocked"] = ids.size();
+        if (targetId > 0) {
+            bool unlocked = false;
+            for (auto& id : ids)
+                if (id.is_number_integer() && id.get<int>() == targetId) { unlocked = true; break; }
+            result["unlocked"] = unlocked;
+            result["item_id"] = targetId;
+        } else {
+            result["unlocked"] = "unknown (could not resolve item name to ID)";
+        }
+        return result.dump();
+    } catch (...) {}
+    return "{\"error\": \"Failed to parse " + type + "\"}";
+}
+
+std::string FunctionHandler::HandleAccountAchievement(const json& args, const CancelCheck& cancel) {
+    std::string name = args.value("name", "");
+    if (name.empty()) return "{\"error\": \"name parameter required\"}";
+    if (m_gw2ApiKey.empty())
+        return "{\"error\": \"GW2 API key not configured. Tell the user to enter their GW2 API key in Options > Claymore Asistan > GW2 API Key.\"}";
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    // Search wiki for the page
+    auto results = m_gw2->WikiSearch(name, 5);
+    if (results.empty())
+        return "{\"error\": \"Wiki page not found for: " + name + "\"}";
+
+    std::string title = results[0].title;
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    // Fetch rendered HTML to extract achievement IDs
+    auto htmlPage = m_gw2->WikiGetPageHtml(title);
+    if (!htmlPage.found)
+        return "{\"error\": \"Could not fetch wiki page: " + title + "\"}";
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    // Extract ALL #achievement{id} from HTML
+    std::vector<int> achieveIds;
+    {
+        std::string pat = "#achievement";
+        size_t pos = 0;
+        while (pos < htmlPage.html.size()) {
+            auto found = htmlPage.html.find(pat, pos);
+            if (found == std::string::npos) break;
+            found += pat.size();
+            std::string num;
+            while (found < htmlPage.html.size() && std::isdigit((unsigned char)htmlPage.html[found]))
+                num += htmlPage.html[found++];
+            if (!num.empty()) {
+                try {
+                    int id = std::stoi(num);
+                    bool dup = false;
+                    for (int existing : achieveIds) if (existing == id) { dup = true; break; }
+                    if (!dup) achieveIds.push_back(id);
+                } catch (...) {}
+            }
+            pos = found;
+        }
+    }
+
+    if (achieveIds.empty())
+        return "{\"error\": \"No achievement IDs found on page: " + title + "\"}";
+
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+
+    // Fetch achievement info + account progress
+    json resultArr = json::array();
+    for (int aid : achieveIds) {
+        if (Cancelled(cancel)) return CANCELLED_JSON;
+
+        auto info = m_gw2->GetAchievement(aid);
+        if (!info.found) continue;
+
+        auto progress = m_gw2->GetAccountAchievement(aid, m_gw2ApiKey);
+
+        json entry;
+        entry["id"] = aid;
+        entry["name"] = info.name;
+        entry["done"] = progress.found ? progress.done : false;
+
+        if (progress.found) {
+            entry["current"] = progress.current;
+            entry["max"] = progress.max;
+
+            std::set<int> doneBits(progress.bits.begin(), progress.bits.end());
+            json completed = json::array();
+            json remaining = json::array();
+            for (size_t i = 0; i < info.bits.size(); ++i) {
+                if (doneBits.count(static_cast<int>(i)) > 0)
+                    completed.push_back(info.bits[i].text);
+                else
+                    remaining.push_back(info.bits[i].text);
+            }
+            entry["completed"] = completed;
+            entry["remaining"] = remaining;
+            entry["completed_count"] = completed.size();
+            entry["remaining_count"] = remaining.size();
+        }
+
+        resultArr.push_back(entry);
+    }
+
+    json result;
+    result["page"] = title;
+    result["achievements"] = resultArr;
+    result["total_achievements"] = resultArr.size();
+
+    int doneCount = 0;
+    for (auto& a : resultArr) if (a.value("done", false)) ++doneCount;
+    result["fully_completed"] = doneCount;
+    result["not_completed"] = resultArr.size() - doneCount;
 
     return result.dump();
 }
