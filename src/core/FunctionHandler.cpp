@@ -1919,6 +1919,35 @@ std::string FunctionHandler::HandleAccountAchievement(const json& args, const Ca
 
     auto achieveIds = ExtractAchievementIds(htmlPage.html);
 
+    // Fallback: try "(achievements)" disambiguation page
+    if (achieveIds.empty() && !Cancelled(cancel)) {
+        // Check if the page mentions a disambiguation link
+        for (const char* suffix : {" (achievements)", " (achievement)"}) {
+            std::string altTitle = title + suffix;
+            // Also try without trailing words like "Mastery"
+            auto altHtml = m_gw2->WikiGetPageHtml(altTitle);
+            if (altHtml.found && !altHtml.html.empty()) {
+                achieveIds = ExtractAchievementIds(altHtml.html);
+                if (!achieveIds.empty()) { title = altTitle; break; }
+            }
+        }
+        // Try stripping last word + (achievements)
+        if (achieveIds.empty()) {
+            auto lastSpace = name.rfind(' ');
+            if (lastSpace != std::string::npos) {
+                std::string baseName = name.substr(0, lastSpace);
+                auto baseResults = m_gw2->WikiSearch(baseName + " (achievements)", 3);
+                for (auto& r : baseResults) {
+                    if (Cancelled(cancel)) break;
+                    auto altHtml = m_gw2->WikiGetPageHtml(r.title);
+                    if (!altHtml.found) continue;
+                    achieveIds = ExtractAchievementIds(altHtml.html);
+                    if (!achieveIds.empty()) { title = r.title; break; }
+                }
+            }
+        }
+    }
+
     if (achieveIds.empty())
         return "{\"error\": \"No achievement IDs found on page: " + title + "\"}";
 
