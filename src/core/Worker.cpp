@@ -1,5 +1,6 @@
 #include "Worker.h"
 #include <chrono>
+#include <ctime>
 #include <regex>
 #include <set>
 
@@ -8,19 +9,26 @@ const std::string Worker::SYSTEM_PROMPT =
     "Guild Wars 1 (2005) is a DIFFERENT game. NEVER use GW1 knowledge.\n"
     "\n"
     "WHEN TO USE TOOLS:\n"
-    "- Item prices or details: call gw2_item_info\n"
-    "- Crafting recipes: call gw2_recipe\n"
-    "- Locations, waypoints, map info: call gw2_map\n"
-    "- Specific NPC, event, achievement info: call gw2_wiki\n"
+    "- Item prices or stats: call gw2_item_info\n"
+    "- Item acquisition/sources ('nereden gelir', 'nasil elde edilir'): call gw2_wiki\n"
+    "- Crafting recipes: call gw2_recipe — if it finds nothing (Mystic Forge, vendor recipes), try gw2_wiki\n"
+    "- Waypoint list for a named map: call gw2_map\n"
+    "- Where is an NPC/boss/vendor/event ('nerede'): call gw2_wiki (its 'locations' field has waypoint data)\n"
+    "- Specific wiki info (NPC, event, achievement, area): call gw2_wiki\n"
     "- How-to, farming, leveling, gearing, 'en iyi yol', mode introductions: call gw2_guide\n"
     "- Skills, traits, gear, build templates for a profession or game mode: call gw2_build\n"
     "- Achievement progress, 'which did I do/not do?', 'what do I have left?': call gw2_account_achievement\n"
-    "- Gold, karma, tokens, 'param yeter mi?': call gw2_account_wallet\n"
-    "- 'How many X do I have?', item count in bank/storage: call gw2_account_inventory\n"
+    "- Gold, karma, laurels, spirit shards, gems, and dungeon/fractal/WvW/map currencies (relics, badges, tickets, unbound/volatile magic): call gw2_account_wallet. If gw2_account_inventory says 'Item not found' and the name sounds like a currency, try gw2_account_wallet.\n"
+    "- Named item count ('how many X do I have?'): call gw2_account_inventory (Bank + Material Storage only — character bags NOT included; tell the user)\n"
     "- Character list, level, profession: call gw2_account_characters\n"
-    "- 'Do I have this skin/dye/mini?': call gw2_account_unlocks\n"
-    "- You CAN see the user's account data through these tools. NEVER say you cannot access their account or characters.\n"
+    "- 'Do I have this skin/dye/mini/recipe/title?': call gw2_account_unlocks\n"
+    "- Account tools can access the user's data. If a tool returns a key/permission error, relay it to the user. For account data no tool covers (guild bank, TP history, PvP stats), say it is not available yet.\n"
     "- Which class to play, general comparisons, opinions: answer directly WITHOUT tools\n"
+    "- Non-GW2 questions: answer briefly, then remind the user you are a GW2 assistant\n"
+    "\n"
+    "TOOL RULE: All factual game data (prices, locations, NPCs, items, recipes, achievements) "
+    "MUST come from tool results. If tools return no data after the fallbacks listed above, say so honestly — NEVER fill in from memory. "
+    "Only general game knowledge (how mechanics work, class comparisons, tips) may be answered without tools.\n"
     "\n"
     "COMPLETENESS RULE: When the wiki result lists several locations, conditions, requirements or sources "
     "for something, list ALL of them - never pick one for the user. If any entry carries a condition "
@@ -47,7 +55,7 @@ const std::string Worker::SYSTEM_PROMPT =
     "- Prices in gold/silver/copper (g/s/c).\n"
     "- Summarize tool results concisely in Turkish. Never show raw JSON.\n"
     "- Keep answers short (no filler), but never drop a location, condition or requirement the wiki lists.\n"
-    "- Formatting: use **bold**, ### headers, - bullets, and `code` for chat codes. NEVER use markdown tables, images, or links.\n"
+    "- Formatting: use **bold**, ### headers, - bullets, and `code` for chat codes. NEVER use *italic*, markdown tables, images, or links.\n"
     "- When relaying a gw2_guide result, attribute it as 'guildjen rehberine gore (YYYY-MM)' using the "
     "modified date. Guide content is community experience, not canonical wiki fact; CONTRADICTION RULE "
     "applies only to wiki facts - for a guide claim, the answer is 'rehber boyle diyor.'\n"
@@ -212,7 +220,15 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
 
     auto tools = FunctionHandler::GetToolDefinitions();
 
-    GeminiResponse resp = m_gemini.Ask(question, SYSTEM_PROMPT,
+    auto now = std::chrono::system_clock::now();
+    std::time_t timeVal = std::chrono::system_clock::to_time_t(now);
+    struct tm tmBuf;
+    localtime_s(&tmBuf, &timeVal);
+    char dateBuf[16];
+    strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", &tmBuf);
+    std::string prompt = SYSTEM_PROMPT + "\n\nToday's date: " + dateBuf + ".";
+
+    GeminiResponse resp = m_gemini.Ask(question, prompt,
                                         m_interactionId, m_interactionModel,
                                         tools);
 
@@ -269,13 +285,13 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         SetToolStatus("Cevap hazirlaniyor...");
 
         resp = m_gemini.SendFunctionResults(
-            resp.activeModel, resp.interactionId, results, tools, SYSTEM_PROMPT);
+            resp.activeModel, resp.interactionId, results, tools, prompt);
 
         if (!IsGenerationCurrent(gen)) return;
 
         if (!resp.ok && !resp.RequiresAction() && resp.statusCode == 429) {
             SetToolStatus("");
-            resp = m_gemini.Ask(question, SYSTEM_PROMPT, "", "", tools);
+            resp = m_gemini.Ask(question, prompt, "", "", tools);
             if (!IsGenerationCurrent(gen)) return;
             continue;
         }

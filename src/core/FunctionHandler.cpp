@@ -10,6 +10,17 @@ using json = nlohmann::json;
 
 static const char* CANCELLED_JSON = "{\"error\": \"cancelled by user\"}";
 
+static std::string CheckApiError(const std::string& raw) {
+    if (raw.empty()) return "";
+    try {
+        auto j = nlohmann::json::parse(raw);
+        if (j.contains("api_error"))
+            return nlohmann::json({{"error", "GW2 API: " + j["api_error"].get<std::string>()
+                + ". Add the required permission at account.arena.net and enter the new key in Options."}}).dump();
+    } catch (...) {}
+    return "";
+}
+
 static std::string TrimStr(const std::string& s) {
     size_t a = 0, b = s.size();
     while (a < b && std::isspace((unsigned char)s[a])) ++a;
@@ -752,10 +763,12 @@ std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& c
         return "{\"error\": \"Item not found: " + name + "\"}";
 
     auto recipeIds = m_gw2->SearchRecipesByOutput(itemId);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     if (recipeIds.empty())
         return "{\"error\": \"No recipe found for: " + name + "\"}";
 
     auto recipe = m_gw2->GetRecipe(recipeIds[0]);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     if (!recipe.found)
         return "{\"error\": \"Recipe details not available\"}";
 
@@ -764,6 +777,7 @@ std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& c
         ingredientIds.push_back(ing.itemId);
 
     auto items = m_gw2->GetItems(ingredientIds);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
     auto prices = m_gw2->GetPrices(ingredientIds);
 
     json result;
@@ -776,7 +790,7 @@ std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& c
         result["chat_link"] = recipe.chatLink;
 
     json ingredients = json::array();
-    int totalCost = 0;
+    int64_t totalCost = 0;
     for (auto& ing : recipe.ingredients) {
         json ingJ;
         ingJ["item_id"] = ing.itemId;
@@ -791,7 +805,7 @@ std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& c
         }
         for (auto& p : prices) {
             if (p.itemId == ing.itemId && p.found) {
-                int cost = p.sellPrice * ing.count;
+                int64_t cost = static_cast<int64_t>(p.sellPrice) * ing.count;
                 ingJ["unit_price"] = GW2Client::FormatPrice(p.sellPrice);
                 ingJ["total_price"] = GW2Client::FormatPrice(cost);
                 totalCost += cost;
@@ -807,8 +821,8 @@ std::string FunctionHandler::HandleRecipe(const json& args, const CancelCheck& c
     auto outputPrice = m_gw2->GetPrice(recipe.outputItemId);
     if (outputPrice.found) {
         result["output_tp_sell"] = GW2Client::FormatPrice(outputPrice.sellPrice);
-        int profit = outputPrice.sellPrice - totalCost;
-        int profitAfterTax = static_cast<int>(outputPrice.sellPrice * 0.85) - totalCost;
+        int64_t profit = static_cast<int64_t>(outputPrice.sellPrice) - totalCost;
+        int64_t profitAfterTax = static_cast<int64_t>(outputPrice.sellPrice * 0.85) - totalCost;
         result["profit_before_tax"] = GW2Client::FormatPrice(profit);
         result["profit_after_tax"] = GW2Client::FormatPrice(profitAfterTax);
     }
@@ -1520,8 +1534,23 @@ std::string FunctionHandler::HandleGuide(const json& args, const CancelCheck& ca
                 break;
             }
         }
-        if (content.empty())
-            return "{\"error\": \"Section not found: " + sectionWanted + "\"}";
+        if (content.empty()) {
+            content = lead;
+            for (auto& s : sections) {
+                if (content.size() >= GUIDE_TEXT_BUDGET) break;
+                std::string chunk = "\n\n## " + s.title + "\n" + s.body;
+                content += chunk.substr(0, GUIDE_TEXT_BUDGET - content.size());
+            }
+            json errResult;
+            errResult["title"] = pageTitle;
+            errResult["source"] = "guildjen";
+            errResult["section_error"] = "Section not found: " + sectionWanted;
+            errResult["sections"] = sectionNames;
+            errResult["url"] = pageUrl;
+            errResult["content"] = content;
+            if (!pageModified.empty()) errResult["modified"] = pageModified.substr(0, 10);
+            return errResult.dump();
+        }
     }
 
     if (content.empty()) {
@@ -1743,25 +1772,35 @@ std::string FunctionHandler::HandleAccountWallet(const json& args, const CancelC
         return "{\"error\": \"GW2 API key not configured. User should enter it in Options > Claymore Asistan.\"}";
     auto raw = m_gw2->GetAccountWallet(m_gw2ApiKey);
     if (raw.empty()) return "{\"error\": \"Could not fetch wallet data\"}";
-    // Return raw wallet data — currency id 1 = coin (copper)
-    // AI knows common currency IDs: 1=Coin, 2=Karma, 3=Laurel, 4=Gem,
-    // 15=Badge of Honor, 16=Gold Fractal Relic, 23=Spirit Shard, etc.
+    auto apiErr = CheckApiError(raw);
+    if (!apiErr.empty()) return apiErr;
     try {
         auto walletArr = json::parse(raw);
+
+        std::map<int, std::string> currencyNames;
+        auto currRaw = m_gw2->GetAllCurrencies();
+        if (!currRaw.empty()) {
+            try {
+                auto currArr = json::parse(currRaw);
+                for (auto& c : currArr)
+                    currencyNames[c.value("id", 0)] = c.value("name", "");
+            } catch (...) {}
+        }
+
         json result;
         for (auto& w : walletArr) {
             int id = w.value("id", 0);
             int val = w.value("value", 0);
+            auto it = currencyNames.find(id);
+            std::string key = (it != currencyNames.end() && !it->second.empty())
+                ? it->second : ("currency_" + std::to_string(id));
             if (id == 1) {
+                result["Coin"] = GW2Client::FormatPrice(val);
                 result["coin_copper"] = val;
-                result["gold"] = val / 10000;
-                result["silver"] = (val % 10000) / 100;
-                result["copper"] = val % 100;
             } else {
-                result["currency_" + std::to_string(id)] = val;
+                result[key] = val;
             }
         }
-        result["hint"] = "currency_1=Coin, currency_2=Karma, currency_3=Laurel, currency_4=Gem, currency_15=Badge of Honor, currency_23=Spirit Shard, currency_18=Transmutation Charge, currency_45=Mystic Coin (wallet)";
         return result.dump();
     } catch (...) {}
     return "{\"error\": \"Failed to parse wallet\"}";
@@ -1783,6 +1822,8 @@ std::string FunctionHandler::HandleAccountInventory(const json& args, const Canc
 
     // Material storage
     auto matRaw = m_gw2->GetAccountMaterials(m_gw2ApiKey);
+    auto matErr = CheckApiError(matRaw);
+    if (!matErr.empty()) return matErr;
     if (!matRaw.empty()) {
         try {
             auto arr = json::parse(matRaw);
@@ -1800,6 +1841,8 @@ std::string FunctionHandler::HandleAccountInventory(const json& args, const Canc
 
     // Bank
     auto bankRaw = m_gw2->GetAccountBank(m_gw2ApiKey);
+    auto bankErr = CheckApiError(bankRaw);
+    if (!bankErr.empty()) return bankErr;
     if (!bankRaw.empty()) {
         try {
             int bankCount = 0;
@@ -1829,9 +1872,10 @@ std::string FunctionHandler::HandleAccountCharacters(const json& args, const Can
     std::string charName = args.value("name", "");
 
     if (charName.empty()) {
-        // List all characters
         auto raw = m_gw2->GetAccountCharacters(m_gw2ApiKey);
         if (raw.empty()) return "{\"error\": \"Could not fetch characters\"}";
+        auto apiErr = CheckApiError(raw);
+        if (!apiErr.empty()) return apiErr;
         try {
             auto names = json::parse(raw);
             json result = json::array();
@@ -1840,6 +1884,8 @@ std::string FunctionHandler::HandleAccountCharacters(const json& args, const Can
                 if (Cancelled(cancel)) return CANCELLED_JSON;
                 auto charRaw = m_gw2->GetAccountCharacter(n.get<std::string>(), m_gw2ApiKey);
                 if (charRaw.empty()) continue;
+                auto apiErr2 = CheckApiError(charRaw);
+                if (!apiErr2.empty()) return apiErr2;
                 auto c = json::parse(charRaw);
                 json entry;
                 entry["name"] = c.value("name", "");
@@ -1856,7 +1902,31 @@ std::string FunctionHandler::HandleAccountCharacters(const json& args, const Can
     } else {
         auto raw = m_gw2->GetAccountCharacter(charName, m_gw2ApiKey);
         if (raw.empty()) return "{\"error\": \"Character not found: " + charName + "\"}";
-        return raw;
+        auto apiErr = CheckApiError(raw);
+        if (!apiErr.empty()) return apiErr;
+        try {
+            auto c = json::parse(raw);
+            json result;
+            result["name"] = c.value("name", "");
+            result["level"] = c.value("level", 0);
+            result["profession"] = c.value("profession", "");
+            result["race"] = c.value("race", "");
+            result["age"] = c.value("age", 0);
+            result["deaths"] = c.value("deaths", 0);
+            result["created"] = c.value("created", "");
+            if (c.contains("guild")) result["guild"] = c["guild"];
+            if (c.contains("title")) result["title"] = c["title"];
+            if (c.contains("crafting")) {
+                json crafts = json::array();
+                for (auto& cr : c["crafting"])
+                    crafts.push_back({{"discipline", cr.value("discipline", "")},
+                                      {"rating", cr.value("rating", 0)},
+                                      {"active", cr.value("active", false)}});
+                result["crafting"] = crafts;
+            }
+            return result.dump();
+        } catch (...) {}
+        return "{\"error\": \"Failed to parse character data\"}";
     }
 }
 
@@ -1870,10 +1940,33 @@ std::string FunctionHandler::HandleAccountUnlocks(const json& args, const Cancel
 
     auto raw = m_gw2->GetAccountUnlocks(type, m_gw2ApiKey);
     if (raw.empty()) return "{\"error\": \"Could not fetch " + type + " data\"}";
+    auto apiErr = CheckApiError(raw);
+    if (!apiErr.empty()) return apiErr;
 
     try {
         auto ids = json::parse(raw);
-        // Resolve item name to ID
+
+        if (type == "titles") {
+            auto titlesRaw = m_gw2->GetAllTitles();
+            if (!titlesRaw.empty()) {
+                auto allTitles = json::parse(titlesRaw);
+                std::string nameLower = LowerStr(name);
+                for (auto& t : allTitles) {
+                    if (LowerStr(t.value("name", "")) == nameLower) {
+                        int tid = t.value("id", 0);
+                        bool unlocked = false;
+                        for (auto& id : ids)
+                            if (id.is_number_integer() && id.get<int>() == tid) { unlocked = true; break; }
+                        return json({{"type", "titles"}, {"name", t["name"]}, {"title_id", tid},
+                                     {"unlocked", unlocked}, {"total_unlocked", ids.size()}}).dump();
+                    }
+                }
+            }
+            return json({{"type", "titles"}, {"name", name},
+                         {"unlocked", "unknown (title not found in API)"},
+                         {"total_unlocked", ids.size()}}).dump();
+        }
+
         int targetId = ResolveItemId(name);
 
         json result;

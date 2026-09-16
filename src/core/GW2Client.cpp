@@ -38,17 +38,24 @@ std::optional<HttpResponse> GW2Client::Fetch(const char* host, const std::string
     auto resp = m_http.Get(host, path, timeoutMs);
     if (!resp && m_logger) {
         std::string shown = path.size() > 120 ? path.substr(0, 120) + "..." : path;
+        auto tokenPos = shown.find("access_token=");
+        if (tokenPos != std::string::npos) {
+            auto end = shown.find('&', tokenPos);
+            shown.replace(tokenPos + 13, (end == std::string::npos ? shown.size() : end) - tokenPos - 13, "****");
+        }
         m_logger("[HTTP] " + std::string(host) + shown + " -> " + m_http.LastFailureText());
     }
     return resp;
 }
 
-std::string GW2Client::FormatPrice(int copper) {
-    if (copper <= 0) return "0c";
-    int gold = copper / 10000;
-    int silver = (copper % 10000) / 100;
-    int cop = copper % 100;
-    std::string result;
+std::string GW2Client::FormatPrice(int64_t copper) {
+    if (copper == 0) return "0c";
+    std::string prefix;
+    if (copper < 0) { prefix = "-"; copper = -copper; }
+    int64_t gold = copper / 10000;
+    int64_t silver = (copper % 10000) / 100;
+    int64_t cop = copper % 100;
+    std::string result = prefix;
     if (gold > 0) result += std::to_string(gold) + "g ";
     if (silver > 0 || gold > 0) result += std::to_string(silver) + "s ";
     result += std::to_string(cop) + "c";
@@ -690,28 +697,45 @@ GuidePage GW2Client::GuideGetContent(const std::string& selfHref) {
     return {};
 }
 
+static std::string AccountFetchResult(const std::optional<HttpResponse>& resp) {
+    if (!resp) return "";
+    if (resp->statusCode == 200) return resp->body;
+    if (resp->statusCode == 403 || resp->statusCode == 401) {
+        try {
+            auto j = nlohmann::json::parse(resp->body);
+            if (j.contains("text"))
+                return nlohmann::json({{"api_error", j["text"].get<std::string>()}, {"status", resp->statusCode}}).dump();
+        } catch (...) {}
+    }
+    return "";
+}
+
 std::string GW2Client::GetAccountWallet(const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/account/wallet?access_token=" + UrlEncode(apiKey));
-    return (resp && resp->statusCode == 200) ? resp->body : "";
+    return AccountFetchResult(Fetch(API_HOST, "/v2/account/wallet?access_token=" + UrlEncode(apiKey)));
 }
 std::string GW2Client::GetAccountBank(const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/account/bank?access_token=" + UrlEncode(apiKey));
-    return (resp && resp->statusCode == 200) ? resp->body : "";
+    return AccountFetchResult(Fetch(API_HOST, "/v2/account/bank?access_token=" + UrlEncode(apiKey)));
 }
 std::string GW2Client::GetAccountMaterials(const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/account/materials?access_token=" + UrlEncode(apiKey));
-    return (resp && resp->statusCode == 200) ? resp->body : "";
+    return AccountFetchResult(Fetch(API_HOST, "/v2/account/materials?access_token=" + UrlEncode(apiKey)));
 }
 std::string GW2Client::GetAccountCharacters(const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/characters?access_token=" + UrlEncode(apiKey));
-    return (resp && resp->statusCode == 200) ? resp->body : "";
+    return AccountFetchResult(Fetch(API_HOST, "/v2/characters?access_token=" + UrlEncode(apiKey)));
 }
 std::string GW2Client::GetAccountCharacter(const std::string& name, const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/characters/" + UrlEncode(name) + "?access_token=" + UrlEncode(apiKey));
-    return (resp && resp->statusCode == 200) ? resp->body : "";
+    return AccountFetchResult(Fetch(API_HOST, "/v2/characters/" + UrlEncode(name) + "?access_token=" + UrlEncode(apiKey)));
 }
 std::string GW2Client::GetAccountUnlocks(const std::string& type, const std::string& apiKey) {
-    auto resp = Fetch(API_HOST, "/v2/account/" + type + "?access_token=" + UrlEncode(apiKey));
+    return AccountFetchResult(Fetch(API_HOST, "/v2/account/" + type + "?access_token=" + UrlEncode(apiKey)));
+}
+
+std::string GW2Client::GetAllTitles() {
+    auto resp = Fetch(API_HOST, "/v2/titles?ids=all");
+    return (resp && resp->statusCode == 200) ? resp->body : "";
+}
+
+std::string GW2Client::GetAllCurrencies() {
+    auto resp = Fetch(API_HOST, "/v2/currencies?ids=all");
     return (resp && resp->statusCode == 200) ? resp->body : "";
 }
 

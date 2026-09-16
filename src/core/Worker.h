@@ -74,7 +74,7 @@ private:
     std::set<std::string> m_verifiedLinks;
     std::vector<EntityCoord> m_entityCoords;
     std::map<int, MapRects> m_mapRects;
-    uint64_t m_entitySeq = 0;
+    std::atomic<uint64_t> m_entitySeq{0};
 
     static const std::string SYSTEM_PROMPT;
     static constexpr int MAX_FC_ROUNDS = 6;

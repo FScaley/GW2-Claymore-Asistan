@@ -181,8 +181,10 @@ public:
     std::string GetAccountCharacters(const std::string& apiKey);
     std::string GetAccountCharacter(const std::string& name, const std::string& apiKey);
     std::string GetAccountUnlocks(const std::string& type, const std::string& apiKey);
+    std::string GetAllTitles();
+    std::string GetAllCurrencies();
 
-    static std::string FormatPrice(int copper);
+    static std::string FormatPrice(int64_t copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);
 
     static constexpr const char* API_HOST = "api.guildwars2.com";

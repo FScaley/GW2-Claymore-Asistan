@@ -596,6 +596,30 @@ int main() {
         }
     }
 
+    // --- P: FormatPrice int64 + negative ---
+    printf("\n--- TEST P: FormatPrice int64 + negative ---\n");
+    Check(GW2Client::FormatPrice(0) == "0c", "FormatPrice(0) == 0c");
+    Check(GW2Client::FormatPrice(-2121) == "-21s 21c", "FormatPrice(-2121) == -21s 21c");
+    Check(GW2Client::FormatPrice(3750000000LL) == "375000g 0s 0c", "FormatPrice(3750000000) == 375000g 0s 0c");
+    Check(GW2Client::FormatPrice(-85000000LL) == "-8500g 0s 0c", "FormatPrice(-85000000) == -8500g 0s 0c");
+    printf("  FormatPrice(3750000000) = %s\n", GW2Client::FormatPrice(3750000000LL).c_str());
+
+    // --- Q: GetAllCurrencies ---
+    printf("\n--- TEST Q: GetAllCurrencies ---\n");
+    auto currRaw = gw2.GetAllCurrencies();
+    Check(!currRaw.empty(), "GetAllCurrencies returns non-empty");
+    if (!currRaw.empty()) {
+        try {
+            auto arr = json::parse(currRaw);
+            printf("  currencies: %zu\n", arr.size());
+            Check(arr.size() >= 30, "at least 30 currencies");
+            bool hasKarma = false;
+            for (auto& c : arr)
+                if (c.value("name", "") == "Karma") { hasKarma = true; break; }
+            Check(hasKarma, "Karma is present");
+        } catch (...) { Check(false, "parse currencies"); }
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }
