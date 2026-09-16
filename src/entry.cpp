@@ -54,7 +54,7 @@ void OnFontReceived(const char* aIdentifier, void* aFont) {
 
 void OnIconReceived(const char* aIdentifier, Texture_t* aTexture) {
     if (aTexture && APIDefs)
-        APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Asistan");
+        APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Law Asistan");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason, LPVOID) {
@@ -65,7 +65,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason, LPVOID) {
 extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Signature = -77043;
     AddonDef.APIVersion = NEXUS_API_VERSION;
-    AddonDef.Name = "Claymore Asistan";
+    AddonDef.Name = "Claymore Law Asistan";
     AddonDef.Version.Major = VER_MAJOR;
     AddonDef.Version.Minor = VER_MINOR;
     AddonDef.Version.Build = VER_BUILD;
@@ -130,14 +130,14 @@ void AddonLoad(AddonAPI_t* aApi) {
     APIDefs->GUI_Register(RT_OptionsRender, AddonOptions);
     APIDefs->InputBinds_RegisterWithString(KB_ID, OnKeybind, "ALT+C");
     APIDefs->Textures_GetOrCreateFromMemory("ICON_CLA", (void*)ICON_CLA_PNG, ICON_CLA_PNG_SIZE);
-    APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Asistan");
+    APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Law Asistan");
 
     char fontPath[MAX_PATH];
     GetWindowsDirectoryA(fontPath, MAX_PATH);
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v" CLAYMORE_VERSION_STR " loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Law Asistan v" CLAYMORE_VERSION_STR " loaded.");
 
     // Field diagnostics for "works for everyone but me": Windows version, whether a proxy exists
     // that WinHTTP (DEFAULT_PROXY) would ignore, and the key's shape - never the key.
@@ -146,7 +146,7 @@ void AddonLoad(AddonAPI_t* aApi) {
         const std::string& key = g_config->GetApiKey();
         std::string problem = ConfigManager::ApiKeyProblem(key);
         std::string status = key.empty()
-            ? std::string("API anahtari: yok (Options > Claymore Asistan)")
+            ? std::string("API anahtari: yok (Options > Claymore Law Asistan)")
             : "API anahtari: " + std::to_string(key.size()) + " karakter"
               + (problem.empty() ? std::string(", gecerli") : " - SORUN: " + problem);
         APIDefs->Log(problem.empty() ? LOGL_INFO : LOGL_WARNING, "Claymore", status.c_str());
@@ -179,7 +179,7 @@ void AddonUnload() {
         delete g_config; g_config = nullptr;
     }
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan unloaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Law Asistan unloaded.");
 }
 
 void AddonRender() {
@@ -207,7 +207,7 @@ void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v" CLAYMORE_VERSION_STR);
+    ImGui::Text("Claymore Law Asistan v" CLAYMORE_VERSION_STR);
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 

@@ -1403,7 +1403,7 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                 result["achievement_note"] = "This page has " + std::to_string(pageAchieveIds.size())
                     + " achievements. To check the user's progress, call gw2_account_achievement with name='" + title + "'.";
             else
-                result["achievement_note"] = "This page has achievements. GW2 API key not configured — user can enter it in Options > Claymore Asistan to track progress.";
+                result["achievement_note"] = "This page has achievements. GW2 API key not configured — user can enter it in Options > Claymore Law Asistan to track progress.";
         }
     }
 
@@ -1769,7 +1769,7 @@ std::string FunctionHandler::HandleBuild(const json& args, const CancelCheck& ca
 
 std::string FunctionHandler::HandleAccountWallet(const json& args, const CancelCheck& cancel) {
     if (m_gw2ApiKey.empty())
-        return "{\"error\": \"GW2 API key not configured. User should enter it in Options > Claymore Asistan.\"}";
+        return "{\"error\": \"GW2 API key not configured. User should enter it in Options > Claymore Law Asistan.\"}";
     auto raw = m_gw2->GetAccountWallet(m_gw2ApiKey);
     if (raw.empty()) return "{\"error\": \"Could not fetch wallet data\"}";
     auto apiErr = CheckApiError(raw);
@@ -1991,7 +1991,7 @@ std::string FunctionHandler::HandleAccountAchievement(const json& args, const Ca
     std::string name = args.value("name", "");
     if (name.empty()) return "{\"error\": \"name parameter required\"}";
     if (m_gw2ApiKey.empty())
-        return "{\"error\": \"GW2 API key not configured. Tell the user to enter their GW2 API key in Options > Claymore Asistan > GW2 API Key.\"}";
+        return "{\"error\": \"GW2 API key not configured. Tell the user to enter their GW2 API key in Options > Claymore Law Asistan > GW2 API Key.\"}";
 
     if (Cancelled(cancel)) return CANCELLED_JSON;
 

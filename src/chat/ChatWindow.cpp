@@ -172,7 +172,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
 
     ImGui::SetNextWindowSizeConstraints(ImVec2(280, 220), ImVec2(800, 900));
 
-    if (!ImGui::Begin("Claymore Asistan##chat", pOpen, ImGuiWindowFlags_NoCollapse)) {
+    if (!ImGui::Begin("Claymore Law Asistan##chat", pOpen, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         PopGW2Style();
         return;

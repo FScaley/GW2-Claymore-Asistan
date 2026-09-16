@@ -5,7 +5,7 @@
 #include <set>
 
 const std::string Worker::SYSTEM_PROMPT =
-    "You are GW2-Claymore Asistan, a Guild Wars 2 (2012, ArenaNet) assistant.\n"
+    "You are GW2-Claymore Law Asistan, a Guild Wars 2 (2012, ArenaNet) assistant.\n"
     "Guild Wars 1 (2005) is a DIFFERENT game. NEVER use GW1 knowledge.\n"
     "\n"
     "WHEN TO USE TOOLS:\n"
@@ -108,7 +108,7 @@ void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
     // Decided here, before the thread exists: DoChat must never read the ConfigManager, which the
     // render thread edits (Kaydet writes the key before it stops this worker).
     m_keyProblem = config->GetApiKey().empty()
-        ? "API anahtari girilmemis. Nexus menusu (CTRL+O) > Options > Claymore Asistan > Gemini API Key > Kaydet."
+        ? "API anahtari girilmemis. Nexus menusu (CTRL+O) > Options > Claymore Law Asistan > Gemini API Key > Kaydet."
         : ConfigManager::ApiKeyProblem(config->GetApiKey());
 
     m_stop = false;
