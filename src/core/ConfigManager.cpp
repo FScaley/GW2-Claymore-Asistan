@@ -18,6 +18,7 @@ bool ConfigManager::Load(const std::string& path) {
     try {
         json j = json::parse(f);
         if (j.contains("gemini_api_key")) SetApiKey(j["gemini_api_key"].get<std::string>());
+        if (j.contains("gw2_api_key")) SetGw2ApiKey(j["gw2_api_key"].get<std::string>());
         if (j.contains("window_x"))       m_windowX = j["window_x"].get<float>();
         if (j.contains("window_y"))       m_windowY = j["window_y"].get<float>();
         if (j.contains("window_w"))       m_windowW = j["window_w"].get<float>();
@@ -82,6 +83,7 @@ std::string ConfigManager::ApiKeyProblem(const std::string& key) {
 void ConfigManager::Save(const std::string& path) const {
     json j;
     j["gemini_api_key"] = m_apiKey;
+    if (!m_gw2ApiKey.empty()) j["gw2_api_key"] = m_gw2ApiKey;
     j["model_chain"] = m_modelChain.empty() ? DEFAULT_MODEL_CHAIN : m_modelChain;
     j["window_x"] = m_windowX;
     j["window_y"] = m_windowY;

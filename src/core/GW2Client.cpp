@@ -689,3 +689,68 @@ GuidePage GW2Client::GuideGetContent(const std::string& selfHref) {
     } catch (...) {}
     return {};
 }
+
+AchievementInfo GW2Client::GetAchievement(int id) {
+    std::string path = "/v2/achievements/" + std::to_string(id);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return {};
+    try {
+        auto j = json::parse(resp->body);
+        AchievementInfo a;
+        a.found = true;
+        a.id = j.value("id", 0);
+        a.name = j.value("name", "");
+        if (j.contains("bits") && j["bits"].is_array()) {
+            for (auto& b : j["bits"]) {
+                AchievementBit bit;
+                bit.type = b.value("type", "");
+                bit.id = b.value("id", 0);
+                bit.text = b.value("text", "");
+                a.bits.push_back(std::move(bit));
+            }
+        }
+        return a;
+    } catch (...) {}
+    return {};
+}
+
+AccountAchievement GW2Client::GetAccountAchievement(int id, const std::string& apiKey) {
+    if (apiKey.empty()) return {};
+    std::string path = "/v2/account/achievements?id=" + std::to_string(id)
+                     + "&access_token=" + UrlEncode(apiKey);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return {};
+    try {
+        auto j = json::parse(resp->body);
+        AccountAchievement a;
+        a.found = true;
+        a.id = j.value("id", 0);
+        a.done = j.value("done", false);
+        a.current = j.value("current", 0);
+        a.max = j.value("max", 0);
+        if (j.contains("bits") && j["bits"].is_array()) {
+            for (auto& b : j["bits"])
+                if (b.is_number_integer()) a.bits.push_back(b.get<int>());
+        }
+        return a;
+    } catch (...) {}
+    return {};
+}
+
+TokenInfo GW2Client::GetTokenInfo(const std::string& apiKey) {
+    if (apiKey.empty()) return {};
+    std::string path = "/v2/tokeninfo?access_token=" + UrlEncode(apiKey);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return {};
+    try {
+        auto j = json::parse(resp->body);
+        TokenInfo t;
+        t.found = true;
+        t.name = j.value("name", "");
+        if (j.contains("permissions") && j["permissions"].is_array())
+            for (auto& p : j["permissions"])
+                if (p.is_string()) t.permissions.push_back(p.get<std::string>());
+        return t;
+    } catch (...) {}
+    return {};
+}

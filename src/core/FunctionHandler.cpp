@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <set>
 
 using json = nlohmann::json;
 
@@ -1256,6 +1257,52 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
             ec.source = EntityCoord::Exact;
             if (!im.text.empty()) ec.areas = {im.text};
             m_entityCoords.push_back(std::move(ec));
+        }
+    }
+
+    // Achievement progress filtering: mark done entities
+    if (!m_entityCoords.empty() && !m_gw2ApiKey.empty() && !Cancelled(cancel)) {
+        // Extract achievement ID from HTML: #achievement(\d+)
+        int achieveId = 0;
+        if (htmlPage.found && !htmlPage.html.empty()) {
+            std::string searchPat = "#achievement";
+            size_t pos = htmlPage.html.find(searchPat);
+            if (pos != std::string::npos) {
+                pos += searchPat.size();
+                std::string num;
+                while (pos < htmlPage.html.size() && std::isdigit((unsigned char)htmlPage.html[pos]))
+                    num += htmlPage.html[pos++];
+                if (!num.empty()) try { achieveId = std::stoi(num); } catch (...) {}
+            }
+        }
+
+        if (achieveId > 0) {
+            auto achieveInfo = m_gw2->GetAchievement(achieveId);
+            auto accountProgress = m_gw2->GetAccountAchievement(achieveId, m_gw2ApiKey);
+
+            if (achieveInfo.found && accountProgress.found) {
+                // Build set of done bit indices
+                std::set<int> doneBits(accountProgress.bits.begin(), accountProgress.bits.end());
+
+                // Match entity coords to achievement bits by name (substring)
+                for (auto& ec : m_entityCoords) {
+                    std::string ecNameLower = LowerStr(ec.name);
+                    for (size_t i = 0; i < achieveInfo.bits.size(); ++i) {
+                        std::string bitTextLower = LowerStr(achieveInfo.bits[i].text);
+                        if (!ecNameLower.empty() && !bitTextLower.empty() &&
+                            (bitTextLower.find(ecNameLower) != std::string::npos ||
+                             ecNameLower.find(bitTextLower) != std::string::npos)) {
+                            ec.bitIndex = static_cast<int>(i);
+                            ec.done = doneBits.count(static_cast<int>(i)) > 0;
+                            break;
+                        }
+                    }
+                }
+
+                // If achievement is fully done, mark all
+                if (accountProgress.done)
+                    for (auto& ec : m_entityCoords) ec.done = true;
+            }
         }
     }
 

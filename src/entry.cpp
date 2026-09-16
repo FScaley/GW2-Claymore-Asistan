@@ -110,6 +110,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     g_itemIndex->Load(g_addonDir + "\\items_index.json");
     g_funcHandler = new FunctionHandler(g_gw2, g_itemIndex);
     g_funcHandler->SetLogger(logger);
+    g_funcHandler->SetGw2ApiKey(g_config->GetGw2ApiKey());
 
     g_chatWindow = new ChatWindow();
     g_overlay = new MarkerOverlay();
@@ -238,6 +239,37 @@ void AddonOptions() {
         else
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "API key aktif");
     }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Text("GW2 API Key:");
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Achievement ilerlemesi icin. Tum izinleri secin.");
+
+    static char gw2KeyBuf[256] = "";
+    static bool gw2KeyLoaded = false;
+    if (!gw2KeyLoaded) {
+        strncpy_s(gw2KeyBuf, g_config->GetGw2ApiKey().c_str(), sizeof(gw2KeyBuf) - 1);
+        gw2KeyLoaded = true;
+    }
+    ImGui::InputText("##gw2apikey", gw2KeyBuf, sizeof(gw2KeyBuf), ImGuiInputTextFlags_Password);
+    ImGui::SameLine();
+    if (ImGui::Button("Kaydet##gw2")) {
+        g_config->SetGw2ApiKey(gw2KeyBuf);
+        strncpy_s(gw2KeyBuf, g_config->GetGw2ApiKey().c_str(), sizeof(gw2KeyBuf) - 1);
+        g_config->Save(g_configPath);
+        if (g_funcHandler) g_funcHandler->SetGw2ApiKey(g_config->GetGw2ApiKey());
+    }
+
+    if (g_config->GetGw2ApiKey().empty()) {
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "GW2 API key girilmedi (opsiyonel)");
+    } else {
+        std::string problem = ConfigManager::ApiKeyProblem(g_config->GetGw2ApiKey());
+        if (!problem.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", problem.c_str());
+        else
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "GW2 API key aktif");
+    }
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Ilerleme 5-15 dk gecikmelidir (GW2 API cache).");
 
     ImGui::Spacing();
     ImGui::Separator();

@@ -15,6 +15,8 @@ struct EntityCoord {
     double cx = 0, cy = 0;
     enum CoordSource { None, Exact, Sector } source = None;
     bool hasCoord = false;
+    bool done = false;
+    int bitIndex = -1;
     std::vector<std::string> areas;
 };
 
@@ -40,6 +42,7 @@ public:
     using CancelCheck = std::function<bool()>;
 
     FunctionHandler(GW2Client* gw2, ItemIndex* index);
+    void SetGw2ApiKey(const std::string& key) { m_gw2ApiKey = key; }
 
     using LogFunc = std::function<void(const std::string&)>;
     void SetLogger(LogFunc fn) { m_logger = std::move(fn); }
@@ -80,6 +83,7 @@ private:
     ItemIndex* m_index;
     std::unordered_map<int, GuideCache> m_guideCache;
     std::function<void(const std::string&)> m_logger;
+    std::string m_gw2ApiKey;
 
     // Entity coord side-channel: written by HandleWiki (worker thread only), drained by Worker.
     std::vector<EntityCoord> m_entityCoords;

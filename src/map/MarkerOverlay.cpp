@@ -48,7 +48,7 @@ void MarkerOverlay::Render(Mumble::Data* mumble, Mumble::Identity* ident,
     if (mumble->Context.IsMapOpen) {
         // World map open: show ALL locations across all maps
         for (auto& ec : m_coords) {
-            if (!ec.hasCoord) continue;
+            if (!ec.hasCoord || ec.done) continue;
             if (ec.source == EntityCoord::Exact)
                 RenderModeMap(mumble, nexus, ec);
             else if (ec.source == EntityCoord::Sector)
@@ -57,7 +57,7 @@ void MarkerOverlay::Render(Mumble::Data* mumble, Mumble::Identity* ident,
     } else if (sameMap) {
         // Gameplay: show only current map markers as 3D
         for (auto* ec : sameMapEntries) {
-            if (!ec->hasCoord) continue;
+            if (!ec->hasCoord || ec->done) continue;
             auto it = m_rects.find(ec->mapId);
             if (it == m_rects.end()) continue;
             const MapRects& rects = it->second;
@@ -286,16 +286,28 @@ void MarkerOverlay::RenderHUD(Mumble::Data* mumble, NexusLinkData_t* nexus,
     double playerCY = mumble->Context.Compass.PlayerPosition.Y;
 
     bool isCollection = m_coords.size() > 6;
-    int totalCoords = 0, sameMapCoords = 0;
-    for (auto& ec : m_coords) if (ec.hasCoord) { ++totalCoords; if (ec.mapId == static_cast<int>(mumble->Context.MapID)) ++sameMapCoords; }
+    int totalCoords = 0, sameMapCoords = 0, doneCount = 0;
+    for (auto& ec : m_coords) {
+        if (ec.hasCoord) { ++totalCoords; if (ec.mapId == static_cast<int>(mumble->Context.MapID)) ++sameMapCoords; }
+        if (ec.done) ++doneCount;
+    }
+    int remaining = totalCoords - doneCount;
 
     char hudText[256];
     if (isCollection && sameMap) {
-        snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 bu haritada %d konum (%d toplam)",
-                 target.name.c_str(), sameMapCoords, totalCoords);
+        if (doneCount > 0)
+            snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 bu haritada %d konum (%d/%d kalan)",
+                     target.name.c_str(), sameMapCoords, remaining, totalCoords);
+        else
+            snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 bu haritada %d konum (%d toplam)",
+                     target.name.c_str(), sameMapCoords, totalCoords);
     } else if (isCollection && !sameMap) {
-        snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 %d konum (%zu harita)",
-                 target.name.c_str(), totalCoords, m_rects.size());
+        if (doneCount > 0)
+            snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 %d/%d kalan",
+                     target.name.c_str(), remaining, totalCoords);
+        else
+            snprintf(hudText, sizeof(hudText), "%s \xe2\x80\x94 %d konum (%zu harita)",
+                     target.name.c_str(), totalCoords, m_rects.size());
     } else if (sameMap && target.hasCoord && rects) {
         double dist = MapMath::ContinentDistanceMetres(
             playerCX, playerCY, target.cx, target.cy, rects->contRect, rects->mapRect);

@@ -18,6 +18,9 @@ public:
     // A non-ASCII byte in the key makes WinHTTP reject the request locally (error 87, no response).
     static std::string ApiKeyProblem(const std::string& key);
 
+    const std::string& GetGw2ApiKey() const { return m_gw2ApiKey; }
+    void SetGw2ApiKey(const std::string& key) { m_gw2ApiKey = SanitizeApiKey(key); }
+
     const std::vector<std::string>& GetModelChain() const { return m_modelChain; }
     void SetModelChain(const std::vector<std::string>& chain) { m_modelChain = chain; }
 
@@ -32,6 +35,7 @@ public:
 
 private:
     std::string m_apiKey;
+    std::string m_gw2ApiKey;
     std::vector<std::string> m_modelChain;
     float m_windowX = 100.0f;
     float m_windowY = 100.0f;

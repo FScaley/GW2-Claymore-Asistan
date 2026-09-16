@@ -114,6 +114,34 @@ struct BuildSearchResult {
     std::string timestamp;
 };
 
+struct AchievementBit {
+    std::string type;       // "Item", "Text", "Minipet", "Skin"
+    int id = 0;             // item/skin/mini id (for Item/Skin/Minipet type)
+    std::string text;       // descriptive text
+};
+
+struct AchievementInfo {
+    int id = 0;
+    std::string name;
+    std::vector<AchievementBit> bits;
+    bool found = false;
+};
+
+struct AccountAchievement {
+    int id = 0;
+    bool done = false;
+    int current = 0;
+    int max = 0;
+    std::vector<int> bits;  // completed bit indices
+    bool found = false;
+};
+
+struct TokenInfo {
+    std::string name;
+    std::vector<std::string> permissions;
+    bool found = false;
+};
+
 class GW2Client {
 public:
     GW2Item GetItem(int id);
@@ -140,6 +168,11 @@ public:
     std::vector<BuildSearchResult> BuildSearch(const std::string& query, int limit = 10);
     WikiPage BuildGetPage(const std::string& title);
     WikiPage BuildGetPageHtml(const std::string& title);
+
+    // Account API (requires GW2 API key)
+    AchievementInfo GetAchievement(int id);
+    AccountAchievement GetAccountAchievement(int id, const std::string& apiKey);
+    TokenInfo GetTokenInfo(const std::string& apiKey);
 
     static std::string FormatPrice(int copper);
     static std::string ExtractItemIdFromWikitext(const std::string& wikitext);

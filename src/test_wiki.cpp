@@ -508,6 +508,94 @@ int main() {
         }
     }
 
+    // --- TEST O: Achievement join probe (v0.5.0) ---
+    printf("\n--- TEST O: Achievement join probe ---\n");
+    {
+        for (const char* pageName : {"Saving Skyscales", "Beetle Saddle"}) {
+            printf("\n  Page: %s\n", pageName);
+            auto page = gw2.WikiGetPage(pageName);
+            Check(page.found, (std::string(pageName) + " page found").c_str());
+            if (!page.found) continue;
+
+            std::string lead;
+            { auto nl = page.wikitext.find("\n=="); lead = (nl != std::string::npos) ? page.wikitext.substr(0, nl) : page.wikitext; }
+
+            // Try multiple infobox field names for achievement ID
+            std::string achieveId;
+            for (const char* field : {"id", "achievement id", "achievement_id"}) {
+                size_t pos = 0;
+                while (pos < lead.size()) {
+                    auto pipe = lead.find('|', pos);
+                    if (pipe == std::string::npos) break;
+                    auto eq = lead.find('=', pipe);
+                    if (eq == std::string::npos) break;
+                    std::string key = lead.substr(pipe + 1, eq - pipe - 1);
+                    // trim
+                    while (!key.empty() && key.front() == ' ') key.erase(key.begin());
+                    while (!key.empty() && key.back() == ' ') key.pop_back();
+                    if (key == field) {
+                        auto nl2 = lead.find_first_of("|\n}", eq + 1);
+                        std::string val = lead.substr(eq + 1, (nl2 != std::string::npos ? nl2 : lead.size()) - eq - 1);
+                        while (!val.empty() && val.front() == ' ') val.erase(val.begin());
+                        while (!val.empty() && val.back() == ' ') val.pop_back();
+                        if (!val.empty() && std::isdigit((unsigned char)val[0])) { achieveId = val; break; }
+                    }
+                    pos = eq + 1;
+                }
+                if (!achieveId.empty()) break;
+            }
+            printf("    achievement id: %s\n", achieveId.empty() ? "(not found)" : achieveId.c_str());
+
+            // Fetch /v2/achievements/{id} (public, no key)
+            if (!achieveId.empty()) {
+                HttpClient http;
+                auto resp = http.Get("api.guildwars2.com", "/v2/achievements/" + achieveId);
+                if (resp && resp->statusCode == 200) {
+                    auto j = json::parse(resp->body);
+                    auto& bits = j["bits"];
+                    printf("    API bits: %zu entries\n", bits.size());
+                    for (size_t i = 0; i < std::min(bits.size(), (size_t)10); ++i) {
+                        std::string type = bits[i].value("type", "?");
+                        std::string text = bits[i].contains("text") ? bits[i]["text"].get<std::string>() : "";
+                        int itemId = bits[i].value("id", -1);
+                        printf("      bits[%zu]: type=%s text='%s' id=%d\n", i, type.c_str(), text.c_str(), itemId);
+                    }
+                    if (bits.size() > 10) printf("      ... (%zu more)\n", bits.size() - 10);
+                } else {
+                    printf("    API fetch failed\n");
+                }
+            }
+
+            // Parse interactive map markers
+            // (reusing FunctionHandler's logic indirectly — just check wikitext)
+            size_t imapCount = 0;
+            {
+                size_t pos = 0;
+                while (pos < page.wikitext.size()) {
+                    auto f = page.wikitext.find("\"coord\"", pos);
+                    if (f == std::string::npos) break;
+                    ++imapCount;
+                    pos = f + 7;
+                }
+            }
+            printf("    interactive map markers: ~%zu\n", imapCount);
+
+            // Count {{collection table}} items
+            size_t collItems = 0;
+            {
+                size_t pos = 0;
+                while (pos < page.wikitext.size()) {
+                    auto f = page.wikitext.find("{{achievement box", pos);
+                    if (f == std::string::npos) f = page.wikitext.find("{{collection", pos);
+                    if (f == std::string::npos) break;
+                    ++collItems;
+                    pos = f + 5;
+                }
+            }
+            printf("    collection/achievement templates: ~%zu\n", collItems);
+        }
+    }
+
     printf("\n%s (%d failures)\n", g_fail == 0 ? "=== TUMU GECTI ===" : "=== BASARISIZ ===", g_fail);
     return g_fail == 0 ? 0 : 1;
 }
