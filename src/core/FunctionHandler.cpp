@@ -1261,6 +1261,9 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
     }
 
     // Achievement progress filtering: mark done entities
+    if (!m_entityCoords.empty() && m_gw2ApiKey.empty()) {
+        result["account_progress_hint"] = "GW2 API key not configured. User can enter it in Options > Claymore Asistan > GW2 API Key to track achievement progress.";
+    }
     if (!m_entityCoords.empty() && !m_gw2ApiKey.empty() && !Cancelled(cancel)) {
         // Extract achievement ID from HTML: #achievement(\d+)
         int achieveId = 0;
@@ -1302,6 +1305,28 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
                 // If achievement is fully done, mark all
                 if (accountProgress.done)
                     for (auto& ec : m_entityCoords) ec.done = true;
+
+                // Add progress to result JSON so the AI can answer "which ones did I do?"
+                json progress;
+                progress["achievement_id"] = achieveId;
+                progress["achievement_name"] = achieveInfo.name;
+                progress["done"] = accountProgress.done;
+                progress["current"] = accountProgress.current;
+                progress["max"] = accountProgress.max;
+                progress["total_bits"] = achieveInfo.bits.size();
+                progress["completed_bits"] = accountProgress.bits.size();
+
+                json completedNames = json::array();
+                json remainingNames = json::array();
+                for (size_t i = 0; i < achieveInfo.bits.size(); ++i) {
+                    if (doneBits.count(static_cast<int>(i)) > 0)
+                        completedNames.push_back(achieveInfo.bits[i].text);
+                    else
+                        remainingNames.push_back(achieveInfo.bits[i].text);
+                }
+                progress["completed"] = completedNames;
+                progress["remaining"] = remainingNames;
+                result["account_progress"] = progress;
             }
         }
     }
