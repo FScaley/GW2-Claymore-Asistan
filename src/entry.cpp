@@ -22,8 +22,8 @@ void OverlayRender();
 
 static constexpr int VER_MAJOR = 0;
 static constexpr int VER_MINOR = 5;
-static constexpr int VER_BUILD = 11;
-#define CLAYMORE_VERSION_STR "0.5.11"
+static constexpr int VER_BUILD = 12;
+#define CLAYMORE_VERSION_STR "0.5.12"
 
 AddonDefinition_t AddonDef = {};
 HMODULE hSelf = nullptr;
@@ -40,7 +40,7 @@ ItemIndex* g_itemIndex = nullptr;
 FunctionHandler* g_funcHandler = nullptr;
 std::string g_configPath;
 std::string g_addonDir;
-bool g_showWindow = true;
+bool g_showWindow = false;
 ImFont* g_font = nullptr;
 MarkerOverlay* g_overlay = nullptr;
 uint64_t g_lastEntitySeq = 0;
@@ -81,8 +81,13 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
 }
 
 void OnKeybind(const char* aIdentifier, bool aIsRelease) {
-    if (!aIsRelease && std::string(aIdentifier) == KB_ID)
+    if (!aIsRelease && std::string(aIdentifier) == KB_ID) {
         g_showWindow = !g_showWindow;
+        if (g_config) {
+            g_config->SetWindowVisible(g_showWindow);
+            g_config->Save(g_configPath);
+        }
+    }
 }
 
 void AddonLoad(AddonAPI_t* aApi) {
@@ -123,7 +128,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     g_worker = new Worker();
     g_worker->Start(g_config, g_funcHandler, logger);
 
-    g_showWindow = true;
+    g_showWindow = g_config->GetWindowVisible();
 
     APIDefs->GUI_Register(RT_Render, AddonRender);
     APIDefs->GUI_Register(RT_Render, OverlayRender);
@@ -188,6 +193,10 @@ void AddonRender() {
     if (f) ImGui::PushFont(f);
     g_chatWindow->Render(g_worker, &g_showWindow);
     if (f) ImGui::PopFont();
+    if (!g_showWindow && g_config) {
+        g_config->SetWindowVisible(false);
+        g_config->Save(g_configPath);
+    }
 }
 
 void OverlayRender() {

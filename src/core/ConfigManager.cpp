@@ -23,6 +23,7 @@ bool ConfigManager::Load(const std::string& path) {
         if (j.contains("window_y"))       m_windowY = j["window_y"].get<float>();
         if (j.contains("window_w"))       m_windowW = j["window_w"].get<float>();
         if (j.contains("window_h"))       m_windowH = j["window_h"].get<float>();
+        if (j.contains("window_visible")) m_windowVisible = j["window_visible"].get<bool>();
 
         if (j.contains("model_chain") && j["model_chain"].is_array()) {
             m_modelChain.clear();
@@ -89,6 +90,7 @@ void ConfigManager::Save(const std::string& path) const {
     j["window_y"] = m_windowY;
     j["window_w"] = m_windowW;
     j["window_h"] = m_windowH;
+    j["window_visible"] = m_windowVisible;
 
     std::string tmp = path + ".tmp";
     {

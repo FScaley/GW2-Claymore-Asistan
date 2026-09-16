@@ -31,6 +31,9 @@ public:
     void SetWindowPos(float x, float y) { m_windowX = x; m_windowY = y; }
     void SetWindowSize(float w, float h) { m_windowW = w; m_windowH = h; }
 
+    bool GetWindowVisible() const { return m_windowVisible; }
+    void SetWindowVisible(bool v) { m_windowVisible = v; }
+
     static const std::vector<std::string> DEFAULT_MODEL_CHAIN;
 
 private:
@@ -41,4 +44,5 @@ private:
     float m_windowY = 100.0f;
     float m_windowW = 400.0f;
     float m_windowH = 500.0f;
+    bool m_windowVisible = false;
 };
