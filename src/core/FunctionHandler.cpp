@@ -1953,33 +1953,41 @@ std::string FunctionHandler::HandleAccountAchievement(const json& args, const Ca
 
     if (Cancelled(cancel)) return CANCELLED_JSON;
 
-    // Fetch achievement info + account progress
+    // Bulk fetch: 2 API calls total instead of N*2
+    auto infos = m_gw2->GetAchievements(achieveIds);
+    if (Cancelled(cancel)) return CANCELLED_JSON;
+    auto progresses = m_gw2->GetAccountAchievements(achieveIds, m_gw2ApiKey);
+
+    std::map<int, AchievementInfo*> infoMap;
+    for (auto& a : infos) infoMap[a.id] = &a;
+    std::map<int, AccountAchievement*> progMap;
+    for (auto& a : progresses) progMap[a.id] = &a;
+
     json resultArr = json::array();
     for (int aid : achieveIds) {
-        if (Cancelled(cancel)) return CANCELLED_JSON;
-
-        auto info = m_gw2->GetAchievement(aid);
-        if (!info.found) continue;
-
-        auto progress = m_gw2->GetAccountAchievement(aid, m_gw2ApiKey);
+        auto infoIt = infoMap.find(aid);
+        auto progIt = progMap.find(aid);
+        if (infoIt == infoMap.end()) continue;
+        auto* info = infoIt->second;
+        auto* prog = progIt != progMap.end() ? progIt->second : nullptr;
 
         json entry;
         entry["id"] = aid;
-        entry["name"] = info.name;
-        entry["done"] = progress.found ? progress.done : false;
+        entry["name"] = info->name;
+        entry["done"] = prog ? prog->done : false;
 
-        if (progress.found) {
-            entry["current"] = progress.current;
-            entry["max"] = progress.max;
+        if (prog) {
+            entry["current"] = prog->current;
+            entry["max"] = prog->max;
 
-            std::set<int> doneBits(progress.bits.begin(), progress.bits.end());
+            std::set<int> doneBits(prog->bits.begin(), prog->bits.end());
             json completed = json::array();
             json remaining = json::array();
-            for (size_t i = 0; i < info.bits.size(); ++i) {
+            for (size_t i = 0; i < info->bits.size(); ++i) {
                 if (doneBits.count(static_cast<int>(i)) > 0)
-                    completed.push_back(info.bits[i].text);
+                    completed.push_back(info->bits[i].text);
                 else
-                    remaining.push_back(info.bits[i].text);
+                    remaining.push_back(info->bits[i].text);
             }
             entry["completed"] = completed;
             entry["remaining"] = remaining;

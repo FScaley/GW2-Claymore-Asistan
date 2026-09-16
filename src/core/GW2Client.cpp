@@ -739,6 +739,58 @@ AchievementInfo GW2Client::GetAchievement(int id) {
     return {};
 }
 
+std::vector<AchievementInfo> GW2Client::GetAchievements(const std::vector<int>& ids) {
+    std::vector<AchievementInfo> result;
+    if (ids.empty()) return result;
+    std::string path = "/v2/achievements?ids=" + BuildIdList(ids);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return result;
+    try {
+        auto arr = json::parse(resp->body);
+        for (auto& j : arr) {
+            AchievementInfo a;
+            a.found = true;
+            a.id = j.value("id", 0);
+            a.name = j.value("name", "");
+            if (j.contains("bits") && j["bits"].is_array())
+                for (auto& b : j["bits"]) {
+                    AchievementBit bit;
+                    bit.type = b.value("type", "");
+                    bit.id = b.value("id", 0);
+                    bit.text = b.value("text", "");
+                    a.bits.push_back(std::move(bit));
+                }
+            result.push_back(std::move(a));
+        }
+    } catch (...) {}
+    return result;
+}
+
+std::vector<AccountAchievement> GW2Client::GetAccountAchievements(const std::vector<int>& ids, const std::string& apiKey) {
+    std::vector<AccountAchievement> result;
+    if (ids.empty() || apiKey.empty()) return result;
+    std::string path = "/v2/account/achievements?ids=" + BuildIdList(ids)
+                     + "&access_token=" + UrlEncode(apiKey);
+    auto resp = Fetch(API_HOST, path);
+    if (!resp || resp->statusCode != 200) return result;
+    try {
+        auto arr = json::parse(resp->body);
+        for (auto& j : arr) {
+            AccountAchievement a;
+            a.found = true;
+            a.id = j.value("id", 0);
+            a.done = j.value("done", false);
+            a.current = j.value("current", 0);
+            a.max = j.value("max", 0);
+            if (j.contains("bits") && j["bits"].is_array())
+                for (auto& b : j["bits"])
+                    if (b.is_number_integer()) a.bits.push_back(b.get<int>());
+            result.push_back(std::move(a));
+        }
+    } catch (...) {}
+    return result;
+}
+
 AccountAchievement GW2Client::GetAccountAchievement(int id, const std::string& apiKey) {
     if (apiKey.empty()) return {};
     std::string path = "/v2/account/achievements?id=" + std::to_string(id)

@@ -171,7 +171,9 @@ public:
 
     // Account API (requires GW2 API key)
     AchievementInfo GetAchievement(int id);
+    std::vector<AchievementInfo> GetAchievements(const std::vector<int>& ids);
     AccountAchievement GetAccountAchievement(int id, const std::string& apiKey);
+    std::vector<AccountAchievement> GetAccountAchievements(const std::vector<int>& ids, const std::string& apiKey);
     TokenInfo GetTokenInfo(const std::string& apiKey);
     std::string GetAccountWallet(const std::string& apiKey);
     std::string GetAccountBank(const std::string& apiKey);
