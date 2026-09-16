@@ -252,21 +252,40 @@ Detaylar: `faz0-rapor.md`
 - Google Search grounding: ucretli key varsa tools ekle (ertelendi — free tier'da test edilemez)
 - Wiki sayfa cache (kosullu: yalnizca FC logunda tekrarlanan ayni gw2_wiki sorgulari gorulurse — alt koleksiyon fetch'leri seri ve cache'siz)
 
-### Faz 3: Harita Isaretcileri ve Rotalar — BEKLIYOR
+### Faz 3 Dilim 1: Entity Marker Overlay — TAMAMLANDI (14-16 Eylul 2026, v0.4.0-v0.4.2)
+
+**Teslim edilenler:**
+- MapMath: ContinentToWorldXZ, WorldToScreen (sol-el GW2), mesafe/yon, 2D harita overlay (39 test)
+- MarkerOverlay: 3D dunya marker + M haritasi overlay + HUD mesafe/yon + ekran disi ok
+- 4 koordinat kaynagi: {{interactive map}} wiki template, | coordinates infobox, event page hop ({{event|...}}), sector center fallback
+- insource:"interactive map" CirrusSearch — koordinatsiz sayfalarda ilgili interactive map sayfasini otomatik bulur
+- Multi-marker (birden fazla spawn noktasi), M haritasinda tum haritalardaki tum konumlar
+- GW2Client: map_rect + sectors parse, bulk GetMaps
+- Entity coord side-channel: FunctionHandler -> Worker -> ChatSnapshot (Gemini bypass)
+- WorldMarker struct: TacO pack entegrasyonu icin hazir (Kind enum, trailPoints)
+
+### Faz 3 Dilim 1.5: GW2 Account Entegrasyonu — TAMAMLANDI (16 Eylul 2026, v0.5.0-v0.5.7)
+
+**Teslim edilenler:**
+- GW2 API key destegi (Options UI, tum izinler)
+- 7 account tool: gw2_account_achievement, gw2_account_wallet, gw2_account_inventory, gw2_account_characters, gw2_account_unlocks + gw2_wiki/gw2_build (mevcut)
+- Achievement progress filtreleme: tamamlanan adimlar marker'dan otomatik kaldirilir
+- Bulk achievement fetch: GetAchievements + GetAccountAchievements (2 API call, N*2 degil)
+- Achievement page disambiguation: "(achievements)" suffix fallback
+- Achievement hint: gw2_wiki sonucunda achievement bulundugunda AI'a otomatik ipucu
+- ExtractAchievementIds: #achievement + id="achievement" + data-id="achievement" format destegi
+
+### Faz 3 Dilim 2: TacO Paketleri ve Rotalar — BEKLIYOR
 
 **Icerik:**
-- ProjectionMath — WorldToScreen (GW2-Nexus-Pathing referans)
 - TacoParser — pugixml + miniz ile TacO XML/.trl okuma
-- MarkerRenderer — ImGui::GetBackgroundDrawList() ile 3D marker
-- TrailRenderer — trail/rota cizimi
-- RouteManager — paket yukleme, MapID filtreleme
+- TrailRenderer — trail/rota cizimi (WorldMarker::trailPoints hazir)
+- RouteManager — paket yukleme, MapID filtreleme, toggle UI
 - Topluluk paketleri (Tekkit's All-In-One, Lady Elyssa, Teh's Trails)
-- 2D harita marker — API/Wiki koordinatlari minimap/haritada
-- Continent ↔ map-space koordinat donusumu (map_rect/continent_rect)
-- AI-tetiklenen 2D marker
-- Mesafe + yon gostergesi
+- Minimap compass overlay (formul hazir, compass semantikleri dogrulanmali)
+- Yukseklik iyilestirme (trail-point Y veya elevation DB)
 
-**Kritik sinir:** API/Wiki koordinatlari 2D — 3D dunya marker sadece TacO paketlerinden mumkun.
+**Not:** Continent → 3D dunya donusumu MUMKUN (Tyrian Codex referansi ile dogrulandi). Eski "sadece TacO'dan mumkun" notu yanlis.
 
 ### Faz 4: Gelismis Navigasyon — OPSIYONEL
 
