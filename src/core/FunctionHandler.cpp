@@ -284,6 +284,33 @@ static std::vector<std::pair<double, double>> ParseMultiCoordinates(const std::s
     return coords;
 }
 
+static std::vector<int> ExtractAchievementIds(const std::string& html) {
+    std::vector<int> ids;
+    // Matches: #achievement1234, id="achievement1234", data-id="achievement1234"
+    for (const char* pat : {"#achievement", "\"achievement"}) {
+        size_t pos = 0;
+        while (pos < html.size()) {
+            auto found = html.find(pat, pos);
+            if (found == std::string::npos) break;
+            found += std::strlen(pat);
+            std::string num;
+            while (found < html.size() && std::isdigit((unsigned char)html[found]))
+                num += html[found++];
+            if (!num.empty()) {
+                try {
+                    int id = std::stoi(num);
+                    bool dup = false;
+                    for (int existing : ids) if (existing == id) { dup = true; break; }
+                    if (!dup) ids.push_back(id);
+                } catch (...) {}
+            }
+            pos = found;
+        }
+        if (!ids.empty()) break;
+    }
+    return ids;
+}
+
 static bool InContinentRect(const GW2MapInfo& m, double x, double y) {
     if (!m.hasContRect) return false;
     double x1 = std::min(m.contRect[0][0], m.contRect[1][0]);
@@ -1357,18 +1384,10 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
         result["account_progress_hint"] = "GW2 API key not configured. User can enter it in Options > Claymore Asistan > GW2 API Key to track achievement progress.";
     }
     if (!m_entityCoords.empty() && !m_gw2ApiKey.empty() && !Cancelled(cancel)) {
-        // Extract achievement ID from HTML: #achievement(\d+)
         int achieveId = 0;
         if (htmlPage.found && !htmlPage.html.empty()) {
-            std::string searchPat = "#achievement";
-            size_t pos = htmlPage.html.find(searchPat);
-            if (pos != std::string::npos) {
-                pos += searchPat.size();
-                std::string num;
-                while (pos < htmlPage.html.size() && std::isdigit((unsigned char)htmlPage.html[pos]))
-                    num += htmlPage.html[pos++];
-                if (!num.empty()) try { achieveId = std::stoi(num); } catch (...) {}
-            }
+            auto ids = ExtractAchievementIds(htmlPage.html);
+            if (ids.size() == 1) achieveId = ids[0];
         }
 
         if (achieveId > 0) {
@@ -1887,29 +1906,7 @@ std::string FunctionHandler::HandleAccountAchievement(const json& args, const Ca
 
     if (Cancelled(cancel)) return CANCELLED_JSON;
 
-    // Extract ALL #achievement{id} from HTML
-    std::vector<int> achieveIds;
-    {
-        std::string pat = "#achievement";
-        size_t pos = 0;
-        while (pos < htmlPage.html.size()) {
-            auto found = htmlPage.html.find(pat, pos);
-            if (found == std::string::npos) break;
-            found += pat.size();
-            std::string num;
-            while (found < htmlPage.html.size() && std::isdigit((unsigned char)htmlPage.html[found]))
-                num += htmlPage.html[found++];
-            if (!num.empty()) {
-                try {
-                    int id = std::stoi(num);
-                    bool dup = false;
-                    for (int existing : achieveIds) if (existing == id) { dup = true; break; }
-                    if (!dup) achieveIds.push_back(id);
-                } catch (...) {}
-            }
-            pos = found;
-        }
-    }
+    auto achieveIds = ExtractAchievementIds(htmlPage.html);
 
     if (achieveIds.empty())
         return "{\"error\": \"No achievement IDs found on page: " + title + "\"}";
