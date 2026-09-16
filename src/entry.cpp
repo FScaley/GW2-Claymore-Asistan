@@ -12,6 +12,7 @@
 #include "core/FunctionHandler.h"
 #include "chat/ChatWindow.h"
 #include "map/MarkerOverlay.h"
+#include "icon_data.h"
 
 void AddonLoad(AddonAPI_t* aApi);
 void AddonUnload();
@@ -21,8 +22,8 @@ void OverlayRender();
 
 static constexpr int VER_MAJOR = 0;
 static constexpr int VER_MINOR = 5;
-static constexpr int VER_BUILD = 9;
-#define CLAYMORE_VERSION_STR "0.5.9"
+static constexpr int VER_BUILD = 10;
+#define CLAYMORE_VERSION_STR "0.5.10"
 
 AddonDefinition_t AddonDef = {};
 HMODULE hSelf = nullptr;
@@ -53,7 +54,7 @@ void OnFontReceived(const char* aIdentifier, void* aFont) {
 
 void OnIconReceived(const char* aIdentifier, Texture_t* aTexture) {
     if (aTexture && APIDefs)
-        APIDefs->QuickAccess_Add(QA_ID, "ICON_CLAYMORE", "ICON_CLAYMORE", KB_ID, "Claymore Asistan");
+        APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Asistan");
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason, LPVOID) {
@@ -128,11 +129,8 @@ void AddonLoad(AddonAPI_t* aApi) {
     APIDefs->GUI_Register(RT_Render, OverlayRender);
     APIDefs->GUI_Register(RT_OptionsRender, AddonOptions);
     APIDefs->InputBinds_RegisterWithString(KB_ID, OnKeybind, "ALT+C");
-    if (APIDefs->Textures_Get("ICON_CLAYMORE"))
-        APIDefs->QuickAccess_Add(QA_ID, "ICON_CLAYMORE", "ICON_CLAYMORE", KB_ID, "Claymore Asistan");
-    else
-        APIDefs->Textures_LoadFromURL("ICON_CLAYMORE",
-            "https://wiki.guildwars2.com", "/images/5/50/Crimson_Antique_Claymore.png", OnIconReceived);
+    APIDefs->Textures_GetOrCreateFromMemory("ICON_CLA", (void*)ICON_CLA_PNG, ICON_CLA_PNG_SIZE);
+    APIDefs->QuickAccess_Add(QA_ID, "ICON_CLA", "ICON_CLA", KB_ID, "Claymore Asistan");
 
     char fontPath[MAX_PATH];
     GetWindowsDirectoryA(fontPath, MAX_PATH);
