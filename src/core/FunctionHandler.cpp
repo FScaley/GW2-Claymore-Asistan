@@ -509,8 +509,12 @@ json FunctionHandler::GetToolDefinitions() {
         {"description", "Check the user's wallet (gold, karma, tokens, currencies). Use for 'how much gold/karma do I have?', 'can I afford X?', 'param yeter mi?'. Returns all currencies with amounts."},
         {"parameters", {
             {"type", "object"},
-            {"properties", {}},
-            {"required", json::array()}
+            {"properties", {
+                {"currency", {
+                    {"type", "string"},
+                    {"description", "Optional: specific currency name to check (e.g. 'gold', 'karma', 'laurel'). If empty, returns all."}
+                }}
+            }}
         }}
     });
 
@@ -541,8 +545,7 @@ json FunctionHandler::GetToolDefinitions() {
                     {"type", "string"},
                     {"description", "Optional character name. If empty, lists all characters."}
                 }}
-            }},
-            {"required", json::array()}
+            }}
         }}
     });
 
