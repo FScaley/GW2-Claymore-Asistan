@@ -21,8 +21,8 @@ void OverlayRender();
 
 static constexpr int VER_MAJOR = 0;
 static constexpr int VER_MINOR = 5;
-static constexpr int VER_BUILD = 7;
-#define CLAYMORE_VERSION_STR "0.5.7"
+static constexpr int VER_BUILD = 8;
+#define CLAYMORE_VERSION_STR "0.5.8"
 
 AddonDefinition_t AddonDef = {};
 HMODULE hSelf = nullptr;

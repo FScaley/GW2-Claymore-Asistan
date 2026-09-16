@@ -219,6 +219,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         }
 
         ImGui::PushID(static_cast<int>(i));
+        ImGui::BeginGroup();
 
         if (msg.role == ChatMessage::User) {
             ImGui::PushStyleColor(ImGuiCol_Text, COL_USER);
@@ -242,6 +243,24 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             ImGui::TextWrapped("%s", msg.text.c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
+        }
+        ImGui::EndGroup();
+
+        if (ImGui::BeginPopupContextItem("msg_ctx")) {
+            if (ImGui::MenuItem("Mesaji kopyala")) {
+                CopyToClipboard(msg.text);
+            }
+            if (snap.messages.size() > 1 && ImGui::MenuItem("Tum sohbeti kopyala")) {
+                std::string all;
+                for (const auto& m : snap.messages) {
+                    if (!all.empty()) all += "\n\n";
+                    if (m.role == ChatMessage::User) all += "Sen: ";
+                    else if (m.role == ChatMessage::Assistant) all += "Claymore: ";
+                    all += m.text;
+                }
+                CopyToClipboard(all);
+            }
+            ImGui::EndPopup();
         }
 
         ImGui::PopID();
@@ -272,6 +291,21 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
     if (m_scrollToBottom) {
         ImGui::SetScrollHereY(1.0f);
         m_scrollToBottom = false;
+    }
+
+    if (!snap.messages.empty() && ImGui::BeginPopupContextWindow("chat_area_ctx",
+            ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+        if (ImGui::MenuItem("Tum sohbeti kopyala")) {
+            std::string all;
+            for (const auto& m : snap.messages) {
+                if (!all.empty()) all += "\n\n";
+                if (m.role == ChatMessage::User) all += "Sen: ";
+                else if (m.role == ChatMessage::Assistant) all += "Claymore: ";
+                all += m.text;
+            }
+            CopyToClipboard(all);
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::EndChild();
