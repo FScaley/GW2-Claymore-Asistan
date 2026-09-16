@@ -1379,10 +1379,21 @@ std::string FunctionHandler::HandleWiki(const json& args, const CancelCheck& can
         }
     }
 
-    // Achievement progress filtering: mark done entities
-    if (!m_entityCoords.empty() && m_gw2ApiKey.empty()) {
-        result["account_progress_hint"] = "GW2 API key not configured. User can enter it in Options > Claymore Asistan > GW2 API Key to track achievement progress.";
+    // Achievement hint: if the page has achievement IDs, tell the AI to check progress
+    if (htmlPage.found && !htmlPage.html.empty()) {
+        auto pageAchieveIds = ExtractAchievementIds(htmlPage.html);
+        if (!pageAchieveIds.empty()) {
+            result["has_achievements"] = true;
+            result["achievement_count"] = pageAchieveIds.size();
+            if (!m_gw2ApiKey.empty())
+                result["achievement_note"] = "This page has " + std::to_string(pageAchieveIds.size())
+                    + " achievements. To check the user's progress, call gw2_account_achievement with name='" + title + "'.";
+            else
+                result["achievement_note"] = "This page has achievements. GW2 API key not configured — user can enter it in Options > Claymore Asistan to track progress.";
+        }
     }
+
+    // Achievement progress filtering: mark done entities
     if (!m_entityCoords.empty() && !m_gw2ApiKey.empty() && !Cancelled(cancel)) {
         int achieveId = 0;
         if (htmlPage.found && !htmlPage.html.empty()) {
