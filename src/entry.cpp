@@ -19,6 +19,11 @@ void AddonRender();
 void AddonOptions();
 void OverlayRender();
 
+static constexpr int VER_MAJOR = 0;
+static constexpr int VER_MINOR = 5;
+static constexpr int VER_BUILD = 2;
+#define CLAYMORE_VERSION_STR "0.5.2"
+
 AddonDefinition_t AddonDef = {};
 HMODULE hSelf = nullptr;
 AddonAPI_t* APIDefs = nullptr;
@@ -60,9 +65,9 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     AddonDef.Signature = -77043;
     AddonDef.APIVersion = NEXUS_API_VERSION;
     AddonDef.Name = "Claymore Asistan";
-    AddonDef.Version.Major = 0;
-    AddonDef.Version.Minor = 5;
-    AddonDef.Version.Build = 1;
+    AddonDef.Version.Major = VER_MAJOR;
+    AddonDef.Version.Minor = VER_MINOR;
+    AddonDef.Version.Build = VER_BUILD;
     AddonDef.Version.Revision = 0;
     AddonDef.Author = "Onur";
     AddonDef.Description = "GW2 AI Asistan - Gemini destekli oyun ici yardimci";
@@ -134,7 +139,7 @@ void AddonLoad(AddonAPI_t* aApi) {
     strcat_s(fontPath, "\\Fonts\\segoeui.ttf");
     APIDefs->Fonts_AddFromFile("FONT_CLAYMORE", 16.0f, fontPath, OnFontReceived, nullptr);
 
-    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v0.5.1 loaded.");
+    APIDefs->Log(LOGL_INFO, "Claymore", "Claymore Asistan v" CLAYMORE_VERSION_STR " loaded.");
 
     // Field diagnostics for "works for everyone but me": Windows version, whether a proxy exists
     // that WinHTTP (DEFAULT_PROXY) would ignore, and the key's shape - never the key.
@@ -204,7 +209,7 @@ void AddonOptions() {
     if (!g_config) return;
     ImFont* f = g_font;
     if (f) ImGui::PushFont(f);
-    ImGui::Text("Claymore Asistan v0.5.1");
+    ImGui::Text("Claymore Asistan v" CLAYMORE_VERSION_STR);
     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Font testi: \xc4\x9f\xc3\xbc\xc5\x9f\xc4\xb1\xc3\xb6\xc3\xa7\xc4\xb0\xc4\x9e\xc5\x9e");
     ImGui::Separator();
 
