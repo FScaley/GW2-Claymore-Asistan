@@ -65,7 +65,7 @@ const std::string Worker::SYSTEM_PROMPT =
 
 static std::set<std::string> ExtractChatLinks(const std::string& text) {
     std::set<std::string> links;
-    std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
+    static const std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
     auto begin = std::sregex_iterator(text.begin(), text.end(), re);
     auto end = std::sregex_iterator();
     for (auto it = begin; it != end; ++it)
@@ -76,7 +76,7 @@ static std::set<std::string> ExtractChatLinks(const std::string& text) {
 static std::string StripUnverifiedChatLinks(const std::string& text,
                                              const std::set<std::string>& verified,
                                              std::function<void(const std::string&)> logger) {
-    std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
+    static const std::regex re("\\[&[A-Za-z0-9+/=]+\\]");
     std::string result;
     auto begin = std::sregex_iterator(text.begin(), text.end(), re);
     auto end = std::sregex_iterator();
@@ -121,6 +121,7 @@ void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
         m_snapshot = ChatSnapshot{};
         auto& chain = config->GetModelChain();
         m_snapshot.activeModel = chain.empty() ? GeminiClient::DEFAULT_CHAIN[0] : chain[0];
+        ++m_snapshotSeq;
     }
     m_thread = std::thread(&Worker::Run, this);
 }
@@ -151,6 +152,7 @@ void Worker::CancelChat() {
     std::lock_guard<std::mutex> lk(m_snapshotMutex);
     m_snapshot.busy = false;
     m_snapshot.toolStatus.clear();
+    ++m_snapshotSeq;
 }
 
 void Worker::ClearHistory() {
@@ -167,12 +169,14 @@ void Worker::ClearHistory() {
         m_snapshot.mapRects.clear();
         m_interactionId.clear();
         m_interactionModel.clear();
+        ++m_snapshotSeq;
     }
 }
 
 void Worker::SetToolStatus(const std::string& status) {
     std::lock_guard<std::mutex> lk(m_snapshotMutex);
     m_snapshot.toolStatus = status;
+    ++m_snapshotSeq;
 }
 
 void Worker::Run() {
@@ -203,6 +207,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.fallbackUsed = false;
         m_snapshot.toolStatus.clear();
         m_snapshot.generation = gen;
+        ++m_snapshotSeq;
     }
 
     // A missing or unsendable key must not become a mystery. An empty key comes back as a 403;
@@ -215,6 +220,7 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.busy = false;
         m_snapshot.messages.push_back({ChatMessage::System, m_keyProblem});
         m_snapshot.error = m_keyProblem;
+        ++m_snapshotSeq;
         return;
     }
 
@@ -347,4 +353,5 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
         m_snapshot.messages.push_back({ChatMessage::System, errText});
         m_snapshot.error = errText;
     }
+    ++m_snapshotSeq;
 }

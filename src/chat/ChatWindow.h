@@ -11,7 +11,7 @@ public:
     void Render(Worker* worker, bool* pOpen);
 
 private:
-    void RenderFormattedText(const std::string& text);
+    void RenderParsedLines(const std::vector<Markdown::Line>& lines);
     void RenderTokens(const std::vector<Markdown::Token>& tokens, float maxX,
                       int& linkId, const ImVec4* overrideColor);
     void CopyToClipboard(const std::string& utf8);
@@ -22,4 +22,8 @@ private:
     size_t m_lastMsgCount = 0;
     std::string m_copiedText;
     std::chrono::steady_clock::time_point m_copiedAt;
+
+    uint64_t m_cachedSnapshotSeq = 0;
+    ChatSnapshot m_cachedSnapshot;
+    std::vector<std::vector<Markdown::Line>> m_parsedMessages;
 };

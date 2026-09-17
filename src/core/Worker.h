@@ -42,6 +42,7 @@ public:
 
     ChatSnapshot GetChatSnapshot() const;
     uint64_t GetEntitySeq() const { return m_entitySeq; }
+    uint64_t GetSnapshotSeq() const { return m_snapshotSeq.load(); }
     void RequestChat(const std::string& question);
     void CancelChat();
     void ClearHistory();
@@ -75,6 +76,7 @@ private:
     std::vector<EntityCoord> m_entityCoords;
     std::map<int, MapRects> m_mapRects;
     std::atomic<uint64_t> m_entitySeq{0};
+    std::atomic<uint64_t> m_snapshotSeq{0};
 
     static const std::string SYSTEM_PROMPT;
     static constexpr int MAX_FC_ROUNDS = 6;

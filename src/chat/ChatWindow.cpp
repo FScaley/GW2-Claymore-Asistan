@@ -118,8 +118,7 @@ void ChatWindow::RenderTokens(const std::vector<Markdown::Token>& tokens, float 
     }
 }
 
-void ChatWindow::RenderFormattedText(const std::string& text) {
-    auto lines = Markdown::Parse(text);
+void ChatWindow::RenderParsedLines(const std::vector<Markdown::Line>& lines) {
     int linkId = 0;
     float maxX = ImGui::GetContentRegionMax().x;
     float indentUnit = ImGui::CalcTextSize("    ").x;
@@ -178,7 +177,22 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         return;
     }
 
-    ChatSnapshot snap = worker->GetChatSnapshot();
+    uint64_t seq = worker->GetSnapshotSeq();
+    if (seq != m_cachedSnapshotSeq) {
+        m_cachedSnapshotSeq = seq;
+        m_cachedSnapshot = worker->GetChatSnapshot();
+
+        if (m_parsedMessages.size() > m_cachedSnapshot.messages.size())
+            m_parsedMessages.clear();
+        while (m_parsedMessages.size() < m_cachedSnapshot.messages.size()) {
+            size_t idx = m_parsedMessages.size();
+            if (m_cachedSnapshot.messages[idx].role == ChatMessage::Assistant)
+                m_parsedMessages.push_back(Markdown::Parse(m_cachedSnapshot.messages[idx].text));
+            else
+                m_parsedMessages.push_back({});
+        }
+    }
+    const ChatSnapshot& snap = m_cachedSnapshot;
 
     if (!snap.activeModel.empty()) {
         std::string modelTag = snap.activeModel;
@@ -236,7 +250,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             ImGui::Text("Claymore:");
             ImGui::PopStyleColor();
             ImGui::Spacing();
-            RenderFormattedText(msg.text);
+            RenderParsedLines(m_parsedMessages[i]);
         } else {
             ImGui::PushStyleColor(ImGuiCol_Text, COL_SYSTEM);
             ImGui::PushTextWrapPos(0.0f);
@@ -271,9 +285,9 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
 
         if (!snap.toolStatus.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, COL_TOOL);
+            static const char* DOTS[] = {"", ".", "..", "..."};
             int dots = static_cast<int>(fmod(ImGui::GetTime() * 2.0, 4.0));
-            std::string dotStr(dots, '.');
-            ImGui::Text("%s%s", snap.toolStatus.c_str(), dotStr.c_str());
+            ImGui::Text("%s%s", snap.toolStatus.c_str(), DOTS[dots]);
             ImGui::PopStyleColor();
         } else {
             int dots = static_cast<int>(fmod(ImGui::GetTime() * 2.0, 4.0));
