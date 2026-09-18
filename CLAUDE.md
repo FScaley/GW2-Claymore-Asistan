@@ -36,7 +36,7 @@ cl /EHsc /std:c++17 /MT /utf-8 test_markdown.cpp chat/Markdown.cpp
 cl /EHsc /std:c++17 /permissive- /DNOMINMAX /MT /I"../include" test_wiki.cpp core/HttpClient.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/ConfigManager.cpp /link winhttp.lib
 
 # Full suite — live Gemini + GW2 API:
-cl /EHsc /std:c++17 /permissive- /DNOMINMAX /MT /I"../include" test_gemini.cpp core/HttpClient.cpp core/GeminiClient.cpp core/ConfigManager.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/Worker.cpp /link winhttp.lib
+cl /EHsc /std:c++17 /permissive- /DNOMINMAX /MT /I"../include" test_gemini.cpp core/HttpClient.cpp core/GeminiClient.cpp core/ConfigManager.cpp core/GW2Client.cpp core/WikiText.cpp core/ItemIndex.cpp core/FunctionHandler.cpp core/Worker.cpp core/ChatHistory.cpp /link winhttp.lib
 ```
 
 `/permissive-` mirrors the vcxproj's `ConformanceMode`; `/DNOMINMAX` mirrors the vcxproj's preprocessor define (added v0.3.17). Both are needed because test builds compile outside MSBuild. `std::min`/`std::max` can now be used freely in any TU — the v0.3.13 ternary workaround is no longer needed. A green test build is not proof the DLL builds.
