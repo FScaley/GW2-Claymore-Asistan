@@ -10,6 +10,7 @@
 #include "core/GW2Client.h"
 #include "core/ItemIndex.h"
 #include "core/FunctionHandler.h"
+#include "core/ChatHistory.h"
 #include "chat/ChatWindow.h"
 #include "map/MarkerOverlay.h"
 #include "icon_data.h"
@@ -43,6 +44,7 @@ std::string g_addonDir;
 bool g_showWindow = true;
 ImFont* g_font = nullptr;
 MarkerOverlay* g_overlay = nullptr;
+ChatHistory* g_history = nullptr;
 uint64_t g_lastEntitySeq = 0;
 
 static const char* QA_ID = "QA_CLAYMORE";
@@ -118,10 +120,11 @@ void AddonLoad(AddonAPI_t* aApi) {
     g_funcHandler->SetLogger(logger);
     g_funcHandler->SetGw2ApiKey(g_config->GetGw2ApiKey());
 
+    g_history = new ChatHistory(g_addonDir + "\\history");
     g_chatWindow = new ChatWindow();
     g_overlay = new MarkerOverlay();
     g_worker = new Worker();
-    g_worker->Start(g_config, g_funcHandler, logger);
+    g_worker->Start(g_config, g_funcHandler, logger, g_history);
 
     g_showWindow = true;
 
@@ -166,6 +169,7 @@ void AddonUnload() {
     if (g_worker) { g_worker->Stop(); delete g_worker; g_worker = nullptr; }
     if (g_overlay) { delete g_overlay; g_overlay = nullptr; }
     if (g_chatWindow) { delete g_chatWindow; g_chatWindow = nullptr; }
+    if (g_history) { delete g_history; g_history = nullptr; }
 
     if (g_itemIndex) {
         g_itemIndex->Save(g_addonDir + "\\items_index.json");
@@ -229,7 +233,7 @@ void AddonOptions() {
             auto* api2 = APIDefs;
             g_worker->Start(g_config, g_funcHandler, [api2](const std::string& msg) {
                 api2->Log(LOGL_WARNING, "Claymore", msg.c_str());
-            });
+            }, g_history);
         }
     }
 
@@ -310,7 +314,7 @@ void AddonOptions() {
                 auto* api2 = APIDefs;
                 g_worker->Start(g_config, g_funcHandler, [api2](const std::string& msg) {
                     api2->Log(LOGL_WARNING, "Claymore", msg.c_str());
-                });
+                }, g_history);
             }
         }
 
