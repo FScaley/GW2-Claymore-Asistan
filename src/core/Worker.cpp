@@ -98,9 +98,10 @@ static std::string StripUnverifiedChatLinks(const std::string& text,
 }
 
 void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
-                   LogFunc logger) {
+                   LogFunc logger, ChatHistory* history) {
     m_config = config;
     m_funcHandler = funcHandler;
+    m_history = history;
     m_gemini.SetApiKey(config->GetApiKey());
     m_gemini.SetModelChain(config->GetModelChain());
     if (logger) m_gemini.SetLogger(logger);
@@ -116,6 +117,9 @@ void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
     m_generation = 0;
     m_interactionId.clear();
     m_interactionModel.clear();
+    m_activeHistoryId.clear();
+    m_needsReinjection = false;
+    m_historyAction.store(0);
     {
         std::lock_guard<std::mutex> lk(m_snapshotMutex);
         m_snapshot = ChatSnapshot{};
@@ -123,6 +127,17 @@ void Worker::Start(ConfigManager* config, FunctionHandler* funcHandler,
         m_snapshot.activeModel = chain.empty() ? GeminiClient::DEFAULT_CHAIN[0] : chain[0];
         ++m_snapshotSeq;
     }
+
+    if (m_history) {
+        auto idx = m_history->GetIndex();
+        if (!idx.empty()) {
+            std::lock_guard<std::mutex> lk(m_cvMutex);
+            m_historyParam = idx[0].id;
+            m_historyAction.store(static_cast<int>(HistoryAction::Load));
+        }
+        UpdateHistoryInSnapshot();
+    }
+
     m_thread = std::thread(&Worker::Run, this);
 }
 
@@ -156,21 +171,194 @@ void Worker::CancelChat() {
 }
 
 void Worker::ClearHistory() {
+    RequestClearChat();
+}
+
+void Worker::RequestNewChat() {
+    std::lock_guard<std::mutex> lk(m_cvMutex);
+    m_historyParam.clear();
+    m_historyAction.store(static_cast<int>(HistoryAction::New));
+    m_cv.notify_one();
+}
+
+void Worker::RequestLoadChat(const std::string& id) {
+    std::lock_guard<std::mutex> lk(m_cvMutex);
+    m_historyParam = id;
+    m_historyAction.store(static_cast<int>(HistoryAction::Load));
+    m_cv.notify_one();
+}
+
+void Worker::RequestDeleteChat(const std::string& id) {
+    std::lock_guard<std::mutex> lk(m_cvMutex);
+    m_historyParam = id;
+    m_historyAction.store(static_cast<int>(HistoryAction::Delete));
+    m_cv.notify_one();
+}
+
+void Worker::RequestClearChat() {
+    std::lock_guard<std::mutex> lk(m_cvMutex);
+    m_historyParam.clear();
+    m_historyAction.store(static_cast<int>(HistoryAction::Clear));
+    m_cv.notify_one();
+}
+
+void Worker::ClearConversationState() {
+    std::lock_guard<std::mutex> lk(m_snapshotMutex);
+    m_snapshot.messages.clear();
+    m_snapshot.error.clear();
+    m_snapshot.fallbackUsed = false;
+    m_snapshot.toolStatus.clear();
+    m_verifiedLinks.clear();
+    m_entityCoords.clear();
+    m_mapRects.clear();
+    m_snapshot.entityCoords.clear();
+    m_snapshot.mapRects.clear();
+    m_interactionId.clear();
+    m_interactionModel.clear();
+    m_activeHistoryId.clear();
+    m_snapshot.activeHistoryId.clear();
+    m_needsReinjection = false;
+    ++m_conversationSeq;
+    m_snapshot.conversationSeq = m_conversationSeq;
+    ++m_entitySeq;
+    m_snapshot.entitySeq = m_entitySeq;
+    ++m_snapshotSeq;
+}
+
+void Worker::HandleHistoryAction(HistoryAction action, const std::string& param) {
+    if (!m_history) return;
+
+    switch (action) {
+    case HistoryAction::New: {
+        AutoSave();
+        ClearConversationState();
+        UpdateHistoryInSnapshot();
+        break;
+    }
+    case HistoryAction::Load: {
+        AutoSave();
+        ChatData data;
+        if (m_history->Load(param, data)) {
+            {
+                std::lock_guard<std::mutex> lk(m_snapshotMutex);
+                m_snapshot.messages = std::move(data.messages);
+                m_snapshot.error.clear();
+                m_snapshot.fallbackUsed = false;
+                m_snapshot.toolStatus.clear();
+                m_interactionId = data.interactionId;
+                m_interactionModel = data.interactionModel;
+                m_verifiedLinks = std::move(data.verifiedLinks);
+                m_entityCoords = std::move(data.entityCoords);
+                m_mapRects = std::move(data.mapRects);
+                m_snapshot.entityCoords = m_entityCoords;
+                m_snapshot.mapRects = m_mapRects;
+                m_activeHistoryId = param;
+                m_snapshot.activeHistoryId = param;
+                ++m_conversationSeq;
+                m_snapshot.conversationSeq = m_conversationSeq;
+                ++m_entitySeq;
+                m_snapshot.entitySeq = m_entitySeq;
+                ++m_snapshotSeq;
+            }
+            m_needsReinjection = true;
+            AutoSave();
+        }
+        UpdateHistoryInSnapshot();
+        break;
+    }
+    case HistoryAction::Delete: {
+        m_history->Delete(param);
+        if (param == m_activeHistoryId)
+            ClearConversationState();
+        UpdateHistoryInSnapshot();
+        break;
+    }
+    case HistoryAction::Clear: {
+        if (!m_activeHistoryId.empty())
+            m_history->Delete(m_activeHistoryId);
+        ClearConversationState();
+        UpdateHistoryInSnapshot();
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+void Worker::AutoSave() {
+    if (!m_history) return;
+
+    std::vector<ChatMessage> msgs;
+    std::string interactionId, interactionModel;
+    std::set<std::string> links;
+    std::vector<EntityCoord> coords;
+    std::map<int, MapRects> rects;
     {
         std::lock_guard<std::mutex> lk(m_snapshotMutex);
-        m_snapshot.messages.clear();
-        m_snapshot.error.clear();
-        m_snapshot.fallbackUsed = false;
-        m_snapshot.toolStatus.clear();
-        m_verifiedLinks.clear();
-        m_entityCoords.clear();
-        m_mapRects.clear();
-        m_snapshot.entityCoords.clear();
-        m_snapshot.mapRects.clear();
-        m_interactionId.clear();
-        m_interactionModel.clear();
-        ++m_snapshotSeq;
+        msgs = m_snapshot.messages;
+        interactionId = m_interactionId;
+        interactionModel = m_interactionModel;
+        links = m_verifiedLinks;
+        coords = m_entityCoords;
+        rects = m_mapRects;
     }
+
+    bool hasUserMsg = false;
+    std::string firstUserText;
+    for (const auto& m : msgs) {
+        if (m.role == ChatMessage::User) {
+            hasUserMsg = true;
+            if (firstUserText.empty()) firstUserText = m.text;
+        }
+    }
+    if (!hasUserMsg) return;
+
+    std::string title = ChatHistory::TruncateTitle(firstUserText);
+    m_activeHistoryId = m_history->Save(
+        m_activeHistoryId, title, msgs, interactionId, interactionModel,
+        links, coords, rects);
+    {
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        m_snapshot.activeHistoryId = m_activeHistoryId;
+    }
+    UpdateHistoryInSnapshot();
+}
+
+void Worker::UpdateHistoryInSnapshot() {
+    if (!m_history) return;
+    auto idx = m_history->GetIndex();
+    std::lock_guard<std::mutex> lk(m_snapshotMutex);
+    m_snapshot.historyIndex = std::move(idx);
+    ++m_snapshotSeq;
+}
+
+std::string Worker::BuildContextPreamble() {
+    std::vector<ChatMessage> msgs;
+    {
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        msgs = m_snapshot.messages;
+    }
+
+    std::vector<std::string> lines;
+    size_t budget = 2000;
+    size_t used = 0;
+
+    bool skippedCurrent = false;
+    for (auto it = msgs.rbegin(); it != msgs.rend() && lines.size() < 10; ++it) {
+        if (it->role == ChatMessage::System) continue;
+        if (!skippedCurrent && it->role == ChatMessage::User) { skippedCurrent = true; continue; }
+        std::string role = (it->role == ChatMessage::User) ? "User" : "Assistant";
+        std::string line = role + ": " + it->text;
+        if (used + line.size() > budget) break;
+        lines.push_back(std::move(line));
+        used += lines.back().size();
+    }
+
+    std::string preamble = "[Previous conversation summary — may overlap, prefer new information on conflict]\n";
+    for (auto it = lines.rbegin(); it != lines.rend(); ++it)
+        preamble += *it + "\n";
+
+    return preamble;
 }
 
 void Worker::SetToolStatus(const std::string& status) {
@@ -182,9 +370,22 @@ void Worker::SetToolStatus(const std::string& status) {
 void Worker::Run() {
     while (!m_stop) {
         std::unique_lock<std::mutex> lk(m_cvMutex);
-        m_cv.wait(lk, [this] { return m_stop.load() || m_chatRequested.load(); });
+        m_cv.wait(lk, [this] {
+            return m_stop.load() || m_chatRequested.load()
+                || m_historyAction.load() != 0;
+        });
 
         if (m_stop) break;
+
+        if (m_historyAction.load() != 0) {
+            auto action = static_cast<HistoryAction>(m_historyAction.load());
+            std::string param = m_historyParam;
+            m_historyParam.clear();
+            m_historyAction.store(0);
+            lk.unlock();
+            HandleHistoryAction(action, param);
+            continue;
+        }
 
         if (m_chatRequested) {
             m_chatRequested = false;
@@ -234,11 +435,27 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
     strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", &tmBuf);
     std::string prompt = SYSTEM_PROMPT + "\n\nToday's date: " + dateBuf + ".";
 
+    if (m_needsReinjection && !m_snapshot.messages.empty()) {
+        prompt += "\n\n" + BuildContextPreamble();
+        m_needsReinjection = false;
+    }
+
     GeminiResponse resp = m_gemini.Ask(question, prompt,
                                         m_interactionId, m_interactionModel,
                                         tools);
 
     if (!IsGenerationCurrent(gen)) return;
+
+    if ((resp.statusCode == 400 || resp.statusCode == 404)
+        && !m_interactionId.empty()
+        && resp.activeModel == m_interactionModel) {
+        auto logger = m_gemini.GetLogger();
+        if (logger) logger("Eski oturum gecersiz, yeni oturum baslatiliyor");
+        m_interactionId.clear();
+        m_interactionModel.clear();
+        resp = m_gemini.Ask(question, prompt, "", "", tools);
+        if (!IsGenerationCurrent(gen)) return;
+    }
 
     bool initialFallback = resp.fallbackUsed;
     int fcRound = 0;
@@ -313,45 +530,53 @@ void Worker::DoChat(const std::string& question, uint64_t gen) {
     if (!resp.ok && resp.error.empty())
         resp.error = "Cevap alinamadi (status: " + resp.status + ")";
 
-    std::lock_guard<std::mutex> lk(m_snapshotMutex);
-    m_snapshot.busy = false;
-    m_snapshot.generation = gen;
+    bool shouldAutoSave = false;
+    {
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        m_snapshot.busy = false;
+        m_snapshot.generation = gen;
 
-    if (resp.ok) {
-        auto logger = m_gemini.GetLogger();
-        std::string safeText = StripUnverifiedChatLinks(resp.text, m_verifiedLinks, logger);
+        if (resp.ok) {
+            auto logger = m_gemini.GetLogger();
+            std::string safeText = StripUnverifiedChatLinks(resp.text, m_verifiedLinks, logger);
 
-        m_snapshot.messages.push_back({ChatMessage::Assistant, safeText});
-        m_snapshot.activeModel = resp.activeModel;
-        m_snapshot.fallbackUsed = initialFallback || resp.fallbackUsed;
-        m_interactionId = resp.interactionId;
-        m_interactionModel = resp.activeModel;
-        m_snapshot.error.clear();
-        if (!pendingEntity.coords.empty()) {
-            m_entityCoords = std::move(pendingEntity.coords);
-            m_mapRects = std::move(pendingEntity.rects);
-            ++m_entitySeq;
-            m_snapshot.entityCoords = m_entityCoords;
-            m_snapshot.mapRects = m_mapRects;
-            m_snapshot.entitySeq = m_entitySeq;
-        }
-    } else {
-        std::string errText;
-        if (resp.statusCode == 429) {
-            errText = resp.error;
-        } else if (resp.statusCode == 401 || resp.statusCode == 403) {
-            errText = "API key gecersiz veya yetkisiz.";
-        } else if (resp.statusCode == 400 || resp.statusCode == 404) {
-            errText = resp.error.empty() ? "Istek hatasi." : resp.error;
-            m_interactionId.clear();
-            m_interactionModel.clear();
-        } else if (!resp.error.empty()) {
-            errText = resp.error;
+            m_snapshot.messages.push_back({ChatMessage::Assistant, safeText});
+            m_snapshot.activeModel = resp.activeModel;
+            m_snapshot.fallbackUsed = initialFallback || resp.fallbackUsed;
+            m_interactionId = resp.interactionId;
+            m_interactionModel = resp.activeModel;
+            m_snapshot.error.clear();
+            if (!pendingEntity.coords.empty()) {
+                m_entityCoords = std::move(pendingEntity.coords);
+                m_mapRects = std::move(pendingEntity.rects);
+                ++m_entitySeq;
+                m_snapshot.entityCoords = m_entityCoords;
+                m_snapshot.mapRects = m_mapRects;
+                m_snapshot.entitySeq = m_entitySeq;
+            }
+            shouldAutoSave = true;
         } else {
-            errText = "Bilinmeyen hata (HTTP " + std::to_string(resp.statusCode) + ")";
+            std::string errText;
+            if (resp.statusCode == 429) {
+                errText = resp.error;
+            } else if (resp.statusCode == 401 || resp.statusCode == 403) {
+                errText = "API key gecersiz veya yetkisiz.";
+            } else if (resp.statusCode == 400 || resp.statusCode == 404) {
+                errText = resp.error.empty() ? "Istek hatasi." : resp.error;
+                m_interactionId.clear();
+                m_interactionModel.clear();
+            } else if (!resp.error.empty()) {
+                errText = resp.error;
+            } else {
+                errText = "Bilinmeyen hata (HTTP " + std::to_string(resp.statusCode) + ")";
+            }
+            m_snapshot.messages.push_back({ChatMessage::System, errText});
+            m_snapshot.error = errText;
         }
-        m_snapshot.messages.push_back({ChatMessage::System, errText});
-        m_snapshot.error = errText;
+        ++m_snapshotSeq;
     }
-    ++m_snapshotSeq;
+
+    if (shouldAutoSave && m_history) {
+        AutoSave();
+    }
 }

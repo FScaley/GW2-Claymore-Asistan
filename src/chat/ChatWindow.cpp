@@ -1,6 +1,7 @@
 #include "ChatWindow.h"
 #include <Windows.h>
 #include <cmath>
+#include <ctime>
 
 static void PushGW2Style() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -55,6 +56,30 @@ static const ImVec4 COL_TOOL      = ImVec4(0.40f, 0.90f, 0.60f, 1.0f);
 static const ImVec4 COL_CODE      = ImVec4(0.80f, 0.84f, 0.90f, 1.0f);
 static const ImVec4 COL_HEADER    = ImVec4(0.96f, 0.86f, 0.45f, 1.0f);
 static const ImVec4 COL_MARKER    = ImVec4(0.75f, 0.70f, 0.50f, 1.0f);
+
+std::string ChatWindow::FormatRelativeTime(int64_t unixTsMs) {
+    if (unixTsMs <= 0) return "";
+    auto now = std::chrono::system_clock::now();
+    int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()).count();
+    int64_t diff = (nowMs - unixTsMs) / 1000;
+    int64_t unixTs = unixTsMs / 1000;
+    if (diff < 60) return "Az once";
+    if (diff < 3600) return std::to_string(diff / 60) + " dk once";
+    if (diff < 86400) return std::to_string(diff / 3600) + " saat once";
+    if (diff < 172800) return "Dun";
+
+    std::time_t t = static_cast<std::time_t>(unixTs);
+    struct tm tmBuf;
+    localtime_s(&tmBuf, &t);
+    static const char* MONTHS[] = {
+        "Oca", "Sub", "Mar", "Nis", "May", "Haz",
+        "Tem", "Agu", "Eyl", "Eki", "Kas", "Ara"
+    };
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%d %s", tmBuf.tm_mday, MONTHS[tmBuf.tm_mon]);
+    return buf;
+}
 
 void ChatWindow::CopyToClipboard(const std::string& utf8) {
     if (!OpenClipboard(nullptr)) return;
@@ -182,6 +207,12 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         m_cachedSnapshotSeq = seq;
         m_cachedSnapshot = worker->GetChatSnapshot();
 
+        if (m_cachedSnapshot.conversationSeq != m_cachedConversationSeq) {
+            m_cachedConversationSeq = m_cachedSnapshot.conversationSeq;
+            m_parsedMessages.clear();
+            m_lastMsgCount = 0;
+        }
+
         if (m_parsedMessages.size() > m_cachedSnapshot.messages.size())
             m_parsedMessages.clear();
         while (m_parsedMessages.size() < m_cachedSnapshot.messages.size()) {
@@ -194,19 +225,115 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
     }
     const ChatSnapshot& snap = m_cachedSnapshot;
 
-    if (!snap.activeModel.empty()) {
-        std::string modelTag = snap.activeModel;
-        if (snap.fallbackUsed)
-            modelTag += " (yedek)";
-        float tagWidth = ImGui::CalcTextSize(modelTag.c_str()).x;
-        float avail = ImGui::GetContentRegionAvail().x;
-        ImGui::SameLine(avail - tagWidth);
-        ImGui::PushStyleColor(ImGuiCol_Text, snap.fallbackUsed
-            ? ImVec4(1.0f, 0.75f, 0.30f, 1.0f) : COL_DIM);
-        ImGui::Text("%s", modelTag.c_str());
-        if (snap.fallbackUsed && ImGui::IsItemHovered())
-            ImGui::SetTooltip("Birincil model kota asiminda - yedek model kullanildi.\nFree API key ile normaldir.");
-        ImGui::PopStyleColor();
+    {
+        float newBtnWidth = 24.0f;
+        float modelSpace = 0.0f;
+        std::string modelTag;
+        if (!snap.activeModel.empty()) {
+            modelTag = snap.activeModel;
+            if (snap.fallbackUsed) modelTag += " (yedek)";
+            modelSpace = ImGui::CalcTextSize(modelTag.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
+        }
+
+        float comboWidth = ImGui::GetContentRegionAvail().x - newBtnWidth
+                           - modelSpace - ImGui::GetStyle().ItemSpacing.x * 2;
+        if (comboWidth < 80.0f) comboWidth = 80.0f;
+
+        std::string comboLabel = "Yeni Sohbet";
+        if (!snap.activeHistoryId.empty()) {
+            for (const auto& e : snap.historyIndex) {
+                if (e.id == snap.activeHistoryId) { comboLabel = e.title; break; }
+            }
+        }
+
+        bool disableHistory = snap.busy;
+
+        if (disableHistory) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+            ImGui::Button(comboLabel.c_str(), ImVec2(comboWidth, 0));
+            ImGui::SameLine();
+            ImGui::Button("+##newchat_d", ImVec2(newBtnWidth, 0));
+            ImGui::PopStyleVar();
+        } else {
+            ImGui::SetNextItemWidth(comboWidth);
+            if (ImGui::BeginCombo("##history", comboLabel.c_str())) {
+                for (const auto& entry : snap.historyIndex) {
+                    ImGui::PushID(entry.id.c_str());
+                    bool isActive = (entry.id == snap.activeHistoryId);
+
+                    float itemWidth = ImGui::GetContentRegionAvail().x;
+                    float delBtnW = 20.0f;
+                    std::string timeStr = FormatRelativeTime(entry.updatedAt);
+                    float timeW = ImGui::CalcTextSize(timeStr.c_str()).x;
+
+                    float titleMaxW = itemWidth - delBtnW - timeW
+                                      - ImGui::GetStyle().ItemSpacing.x * 3;
+                    if (titleMaxW < 40.0f) titleMaxW = 40.0f;
+
+                    if (m_deleteConfirmId == entry.id) {
+                        ImGui::TextColored(COL_SYSTEM, "Silinsin mi?");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Evet")) {
+                            worker->RequestDeleteChat(entry.id);
+                            m_deleteConfirmId.clear();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Hayir")) {
+                            m_deleteConfirmId.clear();
+                        }
+                    } else {
+                        std::string titleClipped = entry.title;
+                        ImVec2 titleSz = ImGui::CalcTextSize(titleClipped.c_str());
+                        if (titleSz.x > titleMaxW) {
+                            while (titleClipped.size() > 3 &&
+                                   ImGui::CalcTextSize((titleClipped + "...").c_str()).x > titleMaxW) {
+                                while (!titleClipped.empty() &&
+                                       (static_cast<unsigned char>(titleClipped.back()) & 0xC0) == 0x80)
+                                    titleClipped.pop_back();
+                                if (!titleClipped.empty()) titleClipped.pop_back();
+                            }
+                            titleClipped += "...";
+                        }
+
+                        if (ImGui::Selectable(titleClipped.c_str(), isActive,
+                                              0, ImVec2(titleMaxW, 0))) {
+                            if (!isActive) worker->RequestLoadChat(entry.id);
+                        }
+                        ImGui::SameLine(itemWidth - delBtnW - timeW
+                                        - ImGui::GetStyle().ItemSpacing.x);
+                        ImGui::TextColored(COL_DIM, "%s", timeStr.c_str());
+                        ImGui::SameLine(itemWidth - delBtnW);
+                        ImGui::PushStyleColor(ImGuiCol_Text, COL_SYSTEM);
+                        if (ImGui::SmallButton("X")) {
+                            m_deleteConfirmId = entry.id;
+                        }
+                        ImGui::PopStyleColor();
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::SameLine();
+            bool noMessages = snap.messages.empty();
+            if (noMessages) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+            if (ImGui::Button("+##newchat", ImVec2(newBtnWidth, 0)) && !noMessages) {
+                worker->RequestNewChat();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Yeni Sohbet");
+            if (noMessages) ImGui::PopStyleVar();
+        }
+
+        if (!modelTag.empty()) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, snap.fallbackUsed
+                ? ImVec4(1.0f, 0.75f, 0.30f, 1.0f) : COL_DIM);
+            ImGui::Text("%s", modelTag.c_str());
+            if (snap.fallbackUsed && ImGui::IsItemHovered())
+                ImGui::SetTooltip("Birincil model kota asiminda - yedek model kullanildi.\nFree API key ile normaldir.");
+            ImGui::PopStyleColor();
+        }
     }
 
     float inputAreaHeight = ImGui::GetFrameHeightWithSpacing() + 6.0f;
@@ -368,7 +495,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.45f, 0.30f, 0.50f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.55f, 0.40f, 0.70f));
         if (ImGui::Button("Temizle##clear", ImVec2(clearWidth, 0))) {
-            worker->ClearHistory();
+            worker->RequestClearChat();
             m_lastMsgCount = 0;
         }
         ImGui::PopStyleColor(3);

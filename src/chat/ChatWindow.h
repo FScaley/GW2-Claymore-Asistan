@@ -15,6 +15,7 @@ private:
     void RenderTokens(const std::vector<Markdown::Token>& tokens, float maxX,
                       int& linkId, const ImVec4* overrideColor);
     void CopyToClipboard(const std::string& utf8);
+    static std::string FormatRelativeTime(int64_t unixTs);
 
     char m_inputBuf[512] = "";
     bool m_scrollToBottom = false;
@@ -26,4 +27,7 @@ private:
     uint64_t m_cachedSnapshotSeq = 0;
     ChatSnapshot m_cachedSnapshot;
     std::vector<std::vector<Markdown::Line>> m_parsedMessages;
+
+    uint64_t m_cachedConversationSeq = 0;
+    std::string m_deleteConfirmId;
 };
