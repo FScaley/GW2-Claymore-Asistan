@@ -228,6 +228,12 @@ void Worker::ClearConversationState() {
 void Worker::HandleHistoryAction(HistoryAction action, const std::string& param) {
     if (!m_history) return;
 
+    {
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        m_snapshot.busy = true;
+        ++m_snapshotSeq;
+    }
+
     switch (action) {
     case HistoryAction::New: {
         AutoSave();
@@ -282,6 +288,12 @@ void Worker::HandleHistoryAction(HistoryAction action, const std::string& param)
     }
     default:
         break;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(m_snapshotMutex);
+        m_snapshot.busy = false;
+        ++m_snapshotSeq;
     }
 }
 

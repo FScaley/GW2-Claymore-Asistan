@@ -211,6 +211,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             m_cachedConversationSeq = m_cachedSnapshot.conversationSeq;
             m_parsedMessages.clear();
             m_lastMsgCount = 0;
+            m_deleteConfirmId.clear();
         }
 
         if (m_parsedMessages.size() > m_cachedSnapshot.messages.size())
@@ -235,9 +236,14 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             modelSpace = ImGui::CalcTextSize(modelTag.c_str()).x + ImGui::GetStyle().ItemSpacing.x;
         }
 
-        float comboWidth = ImGui::GetContentRegionAvail().x - newBtnWidth
-                           - modelSpace - ImGui::GetStyle().ItemSpacing.x * 2;
-        if (comboWidth < 80.0f) comboWidth = 80.0f;
+        float availW = ImGui::GetContentRegionAvail().x;
+        float comboWidth = availW - newBtnWidth - modelSpace
+                           - ImGui::GetStyle().ItemSpacing.x * 2;
+        bool showModelInRow = true;
+        if (comboWidth < 80.0f) {
+            comboWidth = availW - newBtnWidth - ImGui::GetStyle().ItemSpacing.x;
+            showModelInRow = false;
+        }
 
         std::string comboLabel = "Yeni Sohbet";
         if (!snap.activeHistoryId.empty()) {
@@ -250,9 +256,9 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
 
         if (disableHistory) {
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
-            ImGui::Button(comboLabel.c_str(), ImVec2(comboWidth, 0));
-            ImGui::SameLine();
-            ImGui::Button("+##newchat_d", ImVec2(newBtnWidth, 0));
+            ImGui::TextColored(COL_DIM, "%s", comboLabel.c_str());
+            ImGui::SameLine(comboWidth + ImGui::GetStyle().ItemSpacing.x);
+            ImGui::TextColored(COL_DIM, "+");
             ImGui::PopStyleVar();
         } else {
             ImGui::SetNextItemWidth(comboWidth);
@@ -299,10 +305,16 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
                                               0, ImVec2(titleMaxW, 0))) {
                             if (!isActive) worker->RequestLoadChat(entry.id);
                         }
-                        ImGui::SameLine(itemWidth - delBtnW - timeW
-                                        - ImGui::GetStyle().ItemSpacing.x);
+                        float timePos = itemWidth - delBtnW - timeW
+                                        - ImGui::GetStyle().ItemSpacing.x;
+                        if (timePos < titleMaxW + ImGui::GetStyle().ItemSpacing.x)
+                            timePos = titleMaxW + ImGui::GetStyle().ItemSpacing.x;
+                        ImGui::SameLine(timePos);
                         ImGui::TextColored(COL_DIM, "%s", timeStr.c_str());
-                        ImGui::SameLine(itemWidth - delBtnW);
+                        float delPos = itemWidth - delBtnW;
+                        if (delPos < timePos + timeW + ImGui::GetStyle().ItemSpacing.x)
+                            delPos = timePos + timeW + ImGui::GetStyle().ItemSpacing.x;
+                        ImGui::SameLine(delPos);
                         ImGui::PushStyleColor(ImGuiCol_Text, COL_SYSTEM);
                         if (ImGui::SmallButton("X")) {
                             m_deleteConfirmId = entry.id;
@@ -325,7 +337,7 @@ void ChatWindow::Render(Worker* worker, bool* pOpen) {
             if (noMessages) ImGui::PopStyleVar();
         }
 
-        if (!modelTag.empty()) {
+        if (!modelTag.empty() && showModelInRow) {
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, snap.fallbackUsed
                 ? ImVec4(1.0f, 0.75f, 0.30f, 1.0f) : COL_DIM);

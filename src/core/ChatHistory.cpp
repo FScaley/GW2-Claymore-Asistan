@@ -22,9 +22,10 @@ std::string ChatHistory::FilePath(const std::string& id) const {
 }
 
 std::string ChatHistory::GenerateId() {
+    static int counter = 0;
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    return "chat_" + std::to_string(ms);
+    return "chat_" + std::to_string(ms) + "_" + std::to_string(counter++);
 }
 
 std::string ChatHistory::TruncateTitle(const std::string& text, size_t maxBytes) {
@@ -251,9 +252,15 @@ bool ChatHistory::Delete(const std::string& id) {
 
 void ChatHistory::EvictOldest(const std::string& activeId) {
     while (static_cast<int>(m_index.size()) > MAX_HISTORY) {
-        const auto& oldest = m_index.back();
-        if (oldest.id == activeId) break;
-        std::remove(FilePath(oldest.id).c_str());
-        m_index.pop_back();
+        bool evicted = false;
+        for (auto it = m_index.end() - 1; it >= m_index.begin(); --it) {
+            if (it->id != activeId) {
+                std::remove(FilePath(it->id).c_str());
+                m_index.erase(it);
+                evicted = true;
+                break;
+            }
+        }
+        if (!evicted) break;
     }
 }
